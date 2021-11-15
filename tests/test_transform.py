@@ -80,8 +80,6 @@ def test_parallelize_circuits_2q():
         ),
     ]
 
-    print(parallelize_circuits(subcircs, return_index=True))
-
     assert_circuit_eq(hostcircs, expect)
 
 
