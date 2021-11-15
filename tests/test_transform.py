@@ -501,7 +501,7 @@ def test_uncombine_result_kerneled_avg():
         success=True,
         shots=shots,
         meas_level=MeasLevel.KERNELED,
-        meas_return=MeasReturnType.SINGLE,
+        meas_return=MeasReturnType.AVERAGE,
         data=ExperimentResultData(memory=memory),
         header=QobjExperimentHeader(
             name='big circuit',
@@ -511,7 +511,7 @@ def test_uncombine_result_kerneled_avg():
                 *[['c0', i] for i in range(3)],
                 *[['c1', i] for i in range(2)],
             ],
-            memory_slots=memory.shape[1],
+            memory_slots=5,
 
             this_field=42,
         ),
@@ -525,7 +525,7 @@ def test_uncombine_result_kerneled_avg():
             success=True,
             shots=shots,
             meas_level=MeasLevel.KERNELED,
-            meas_return=MeasReturnType.SINGLE,
+            meas_return=MeasReturnType.AVERAGE,
             data=ExperimentResultData(memory=memory[0:3]),
             header=QobjExperimentHeader(
                 name='circuit-0',
@@ -541,7 +541,7 @@ def test_uncombine_result_kerneled_avg():
             success=True,
             shots=shots,
             meas_level=MeasLevel.KERNELED,
-            meas_return=MeasReturnType.SINGLE,
+            meas_return=MeasReturnType.AVERAGE,
             data=ExperimentResultData(memory=memory[3:5]),
             header=QobjExperimentHeader(
                 name='circuit-1',
