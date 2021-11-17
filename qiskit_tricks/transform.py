@@ -16,6 +16,7 @@ __all__ = [
     'parallelize_circuits',
     'combine_circuits',
     'uncombine_result',
+    'has_subcircuits',
 ]
 
 

@@ -1,6 +1,6 @@
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from typing import SupportsInt, TypeVar, Union, overload, cast
+from typing import SupportsInt, TypeVar, Union, cast, overload
 
 from qiskit.circuit import ClassicalRegister
 
