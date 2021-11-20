@@ -9,7 +9,7 @@ from qiskit.providers import JobV1 as Job
 from qiskit.providers.backend import BackendV1 as Backend
 from qiskit_experiments.calibration_management import BackendCalibrations
 
-from qiskit_tricks import parallelize_circuits
+from qiskit_tricks.transform import parallelize_circuits
 
 
 __all__ = ['Experiment']
