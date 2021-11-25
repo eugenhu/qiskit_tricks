@@ -13,6 +13,13 @@ from qiskit_tricks.experiments import Experiment
 from qiskit_tricks.result import ResultLike, resultdf
 
 
+__all__ = [
+    'QutritMeasureExperiment',
+    'QutritMeasureAnalysis',
+    'QutritClassifier',
+]
+
+
 class QutritMeasureExperiment(Experiment):
     parameter_names = ('qubit', 'x', 'x12', 'prep')
 
