@@ -133,18 +133,22 @@ class SpectroscopyAnalysis:
             plt.gca().add_artist(at)
 
         signal = self.signal.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
-        peaks = self.peaks.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
 
-
-        for _, peak in peaks.iterrows():
-            plt.gca().axvline(peak['freq'], c='red', lw=1.0)
-            plt.gca().axvspan(
-                peak['freq'] - 2*peak['freq_err'],
-                peak['freq'] + 2*peak['freq_err'],
-                facecolor='red',
-                edgecolor='none',
-                alpha=0.2
-            )
+        try:
+            peaks = self.peaks.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
+        except KeyError:
+            # No peaks.
+            pass
+        else:
+            for _, peak in peaks.iterrows():
+                plt.gca().axvline(peak['freq'], c='red', lw=1.0)
+                plt.gca().axvspan(
+                    peak['freq'] - 2*peak['freq_err'],
+                    peak['freq'] + 2*peak['freq_err'],
+                    facecolor='red',
+                    edgecolor='none',
+                    alpha=0.2
+                )
 
         plt.scatter(signal.index, signal, c=f'C{i}', s=2.0)
         plt.grid()
