@@ -191,7 +191,7 @@ class Analysis:
                 if isinstance(v[0], pd.Series):
                     # Heuristic to determine if series levels should be unstacked into a dataframe.
                     if v[0].index.names[0] == None:
-                        table = table.unstack(v[0].index.names)
+                        table = table.unstack(v[0].index.names).infer_objects()
                 tables[k] = table
         else:
             self.index = None
