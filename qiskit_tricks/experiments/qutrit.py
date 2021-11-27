@@ -1,6 +1,6 @@
 # Required in Python 3.7 to enable PEP 563 -- Postponed Evaluation of Annotations
 from __future__ import annotations
-from typing import Optional, Union, cast, overload
+from typing import Optional, Union, overload
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -9,8 +9,7 @@ from qiskit.circuit import ClassicalRegister, Gate, QuantumCircuit
 from qiskit.compiler.assembler import MeasLevel, MeasReturnType
 import scipy.optimize
 
-from qiskit_tricks.experiments import Experiment
-from qiskit_tricks.result import ResultLike, resultdf
+from qiskit_tricks.experiments import Experiment, Analysis
 
 
 __all__ = [
@@ -83,29 +82,36 @@ class QutritMeasureExperiment(Experiment):
         return run_config
 
 
-class QutritMeasureAnalysis:
-    def __init__(self, data: pd.Series) -> None:
-        other_levels = data.index.names.difference(['shot', 'prep'])
+class QutritMeasureAnalysis(Analysis):
+    dont_groupby = ('shot', 'prep')
 
-        self.data = data
-        self.groups = groups = pd.DataFrame(data.groupby(other_levels).groups.keys(), columns=other_levels)
-        self.prob_params = cast(
-            pd.DataFrame,
-            data.to_frame().groupby(groups.columns.to_list()).apply(self._max_likelihood_est)
-        )
-        self.classifier = classifier = QutritClassifier(self.prob_params)
-        self.confusion = data.groupby([*groups.columns, 'prep']).apply(classifier.population).unstack()
+    prob_params: pd.DataFrame
+    confusion: pd.DataFrame
+
+    def create_tables(
+            self,
+            data: Union[pd.Series, pd.DataFrame]
+    ) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
+        if isinstance(data, pd.Series):
+            data = data.to_frame()
+        assert isinstance(data, pd.DataFrame)
+
+        prob_params = self._max_likelihood_est(data)
+        classifier = QutritClassifier(prob_params)
+        confusion = data.groupby('prep').apply(classifier.population)
+
+        return dict(prob_params=prob_params, confusion=confusion)
 
     @staticmethod
-    def _max_likelihood_est(group):
-        group = group.squeeze(axis=1)
+    def _max_likelihood_est(data) -> pd.Series:
+        data = data.squeeze(axis=1)
 
         # Scale down (I,Q) plane so std ≈ 1 to aid the numerical minimization routines.
-        scale = group.xs(0, level='prep').values.reshape(-1, 1).view(np.double).std(axis=0).mean()
-        norm_group = group/scale
+        scale = data.xs(0, level='prep').values.reshape(-1, 1).view(np.double).std(axis=0).mean()
+        data = data/scale
 
         pop = np.ones(3)/3
-        mean = norm_group.groupby('prep').apply(np.mean).values
+        mean = data.groupby('prep').apply(np.mean).values
         std = 1.0
 
         def pack(pop: np.ndarray, mean: np.ndarray, std: float) -> np.ndarray:
@@ -124,7 +130,7 @@ class QutritMeasureAnalysis:
             return pop, mean, std
 
         res = scipy.optimize.minimize(
-            lambda params: -log_likelihood(*unpack(params), norm_group.values),
+            lambda params: -log_likelihood(*unpack(params), data.values),
             x0=pack(pop, mean, std),
             method='L-BFGS-B',
         )
@@ -133,46 +139,18 @@ class QutritMeasureAnalysis:
         mean *= scale
         std *= scale
 
+        # dtype is object so std doesn't become complex.
         return pd.Series({'mean0': mean[0], 'mean1': mean[1], 'mean2': mean[2], 'std': std}, dtype=object)
 
-    @classmethod
-    def from_experiment(cls, obj: ResultLike, **kwargs) -> QutritMeasureAnalysis:
-        return cls(resultdf(obj), **kwargs)
-
-    def plot(self, i: Optional[int] = None, **kwargs):
+    def plot(self):
         import matplotlib.pyplot as plt
 
-        if i is None:
-            mask = self.groups[kwargs.keys()].agg(lambda x: x.to_dict() == kwargs, axis=1)
-            candidates = self.groups.index[mask]
-            if len(candidates) == 0:
-                raise ValueError(f"No groups for {kwargs}")
-            i = candidates[0]
+        self = self if self.index is None else self[0]
+        prob_params = self.prob_params
+        confusion = self.confusion
 
-        if i is not None:
-            kwargs = self.groups.iloc[i].to_dict()
-
-        from matplotlib.offsetbox import AnchoredText
-
-        caption = '\n'.join(map('{0[0]} = {0[1]!r}'.format, self.groups.iloc[i].items()))
-        at = AnchoredText(
-            caption,
-            prop=dict(fontfamily='monospace', alpha=0.5),
-            frameon=True,
-            loc='lower right',
-        )
-        at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
-        at.patch.set_alpha(0.5)
-        plt.gca().add_artist(at)
-
-        data = self.data.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
-        data = data.droplevel(data.index.names.difference(['prep']))
-        prob_params = self.prob_params.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
-        confusion = self.confusion.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
-        confusion = confusion.droplevel(confusion.index.names.difference(['prep'])).sort_index()
-
-        mean = prob_params[['mean0', 'mean1', 'mean2']].iloc[0].values.ravel()
-        std = prob_params['std'].iloc[0]
+        mean = np.cdouble(prob_params[['mean0', 'mean1', 'mean2']])
+        std = np.real(prob_params['std'])
 
         xmin = mean.real.min() - 4*std
         xmax = mean.real.max() + 4*std
@@ -197,12 +175,12 @@ class QutritMeasureAnalysis:
         plt.ylabel('Q [a.u.]')
 
         # Randomize observed data so points of different states overlap randomly when drawn.
-        shuffled_data = data.sample(frac=1)
+        shuffled = self.source.sample(frac=1)
         size = plt.gcf().get_size_inches().mean()**2/500
         plt.scatter(
-            shuffled_data.values.real,
-            shuffled_data.values.imag,
-            c=np.take(['#1f77b4', '#ff7f0e', '#2ca02c'], shuffled_data.index),
+            shuffled.values.real,
+            shuffled.values.imag,
+            c=np.take(['#1f77b4', '#ff7f0e', '#2ca02c'], shuffled.index.get_level_values('prep')),
             s=size,
         )
 
@@ -244,8 +222,14 @@ class QutritMeasureAnalysis:
 
 
 class QutritClassifier:
-    def __init__(self, params: pd.DataFrame) -> None:
-        self.params = params
+    params: pd.DataFrame
+
+    def __init__(self, params: Union[pd.DataFrame, pd.Series]) -> None:
+        if isinstance(params, pd.DataFrame):
+            self.params = params
+        else:
+            self.params = params.to_frame(name=0).T.astype(complex)
+            self.params['std'] = np.real(self.params['std'])
 
     @overload
     def population(self, obs: Union[pd.Series, pd.DataFrame]) -> pd.Series: ...
