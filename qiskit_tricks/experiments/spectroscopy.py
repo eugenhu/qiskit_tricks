@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, cast
+from typing import Optional, cast, Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -9,9 +9,8 @@ import qiskit.pulse as qpulse
 import scipy.optimize
 import scipy.signal
 
-from qiskit_tricks.experiments import Experiment
+from qiskit_tricks.experiments import Experiment, Analysis
 from qiskit_tricks.fit import line_fit
-from qiskit_tricks.result import ResultLike, resultdf
 
 
 __all__ = [
@@ -81,80 +80,60 @@ class EFSpectroscopyExperiment(SpectroscopyExperiment):
         super().build(circuit, qubit, **params)
 
 
-class SpectroscopyAnalysis:
-    def __init__(self, data: pd.Series) -> None:
-        self.data = data
-        other_levels = data.index.names.difference(['freq'])
+class SpectroscopyAnalysis(Analysis):
+    dont_groupby = ('freq',)
 
-        groupby = data.groupby(other_levels)
-        signals = []
-        for _, group in groupby:
-            z = group.values.ravel()
-            y = line_fit(np.array([z.real, z.imag])).projection
-            y = y - y.mean()
-            if abs(y.min()) > abs(y.max()):
-                y = -y
-            y = (y-y.min())/np.ptp(y)
-            sig = pd.Series(y, group.index)
-            signals.append(sig)
+    signal: pd.Series
+    peaks: pd.DataFrame
 
-        self.groups = pd.DataFrame(groupby.groups.keys(), columns=other_levels)
-        self.signal = signal = pd.concat(signals)
-        self.peaks = signal.groupby(other_levels).apply(lambda x: find_peaks(x.droplevel(other_levels)))
+    def create_tables(
+            self,
+            data: Union[pd.Series, pd.DataFrame]
+    ) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
+        raw = data.values.ravel()
+        y = line_fit(np.array([raw.real, raw.imag])).projection
+        y = y - y.mean()
+        if abs(y.min()) > abs(y.max()):
+            y = -y
+        y = (y-y.min())/np.ptp(y)
 
-    @classmethod
-    def from_experiment(cls, obj: ResultLike, **kwargs) -> SpectroscopyAnalysis:
-        return cls(resultdf(obj), **kwargs)
+        signal = pd.Series(y, data.index)
+        peaks = find_peaks(signal)
 
-    def plot(self, i: Optional[int] = None, caption=True, **kwargs):
+        return dict(signal=signal, peaks=peaks)
+
+    def plot(self, c: Optional[str] = None, label: Optional[str] = None):
         import matplotlib.pyplot as plt
-        from matplotlib.offsetbox import AnchoredText
 
-        if i is None:
-            mask = self.groups[kwargs.keys()].agg(lambda x: x.to_dict() == kwargs, axis=1)
-            candidates = self.groups.index[mask]
-            if len(candidates) == 0:
-                raise ValueError(f"No groups for {kwargs}")
-            i = candidates[0]
+        head = self if self.index is None else self[0]
 
-        if i is not None:
-            kwargs = self.groups.iloc[i].to_dict()
+        signal = head.signal
+        peaks = head.peaks
 
-        if caption:
-            caption_txt = '\n'.join(map('{0[0]} = {0[1]!r}'.format, self.groups.iloc[i].items()))
-            at = AnchoredText(
-                caption_txt,
-                prop=dict(fontfamily='monospace', alpha=0.5),
-                frameon=True,
-                loc='right',
+        if self.index is not None and not self.index.empty:
+            key = self.index[[0]].to_frame().iloc[0].to_dict()
+            if label:
+                label = label.format(**key)
+            if c:
+                c = c.format(**key)
+
+        for _, peak in peaks.iterrows():
+            plt.gca().axvline(peak['freq'], c='red', lw=1.0)
+            plt.gca().axvspan(
+                peak['freq'] - 2*peak['freq_err'],
+                peak['freq'] + 2*peak['freq_err'],
+                facecolor='red',
+                edgecolor='none',
+                alpha=0.2
             )
-            at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
-            at.patch.set_alpha(0.5)
-            plt.gca().add_artist(at)
 
-        signal = self.signal.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
-
-        try:
-            peaks = self.peaks.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
-        except KeyError:
-            # No peaks.
-            pass
-        else:
-            for _, peak in peaks.iterrows():
-                plt.gca().axvline(peak['freq'], c='red', lw=1.0)
-                plt.gca().axvspan(
-                    peak['freq'] - 2*peak['freq_err'],
-                    peak['freq'] + 2*peak['freq_err'],
-                    facecolor='red',
-                    edgecolor='none',
-                    alpha=0.2
-                )
-
-        plt.scatter(signal.index, signal, c=f'C{i}', s=2.0)
+        plt.scatter(signal.index, signal, c=c, s=2.0, label=label)
         plt.grid()
 
         plt.xlabel('frequency [Hz]')
         plt.ylabel('signal [a.u.]')
+
+        return self
 
 
 def find_peaks(signal, prominence=0.1):
