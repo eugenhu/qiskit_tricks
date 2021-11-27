@@ -142,12 +142,12 @@ class QutritMeasureAnalysis(Analysis):
         # dtype is object so std doesn't become complex.
         return pd.Series({'mean0': mean[0], 'mean1': mean[1], 'mean2': mean[2], 'std': std}, dtype=object)
 
-    def plot(self):
+    def plot(self, *, obs=True):
         import matplotlib.pyplot as plt
 
-        self = self if self.index is None else self[0]
-        prob_params = self.prob_params
-        confusion = self.confusion
+        head = self if self.index is None else self[0]
+        prob_params = head.prob_params
+        confusion = head.confusion
 
         mean = np.cdouble(prob_params[['mean0', 'mean1', 'mean2']])
         std = np.real(prob_params['std'])
@@ -175,14 +175,15 @@ class QutritMeasureAnalysis(Analysis):
         plt.ylabel('Q [a.u.]')
 
         # Randomize observed data so points of different states overlap randomly when drawn.
-        shuffled = self.source.sample(frac=1)
-        size = plt.gcf().get_size_inches().mean()**2/500
-        plt.scatter(
-            shuffled.values.real,
-            shuffled.values.imag,
-            c=np.take(['#1f77b4', '#ff7f0e', '#2ca02c'], shuffled.index.get_level_values('prep')),
-            s=size,
-        )
+        if obs:
+            shuffled = head.source.sample(frac=1)
+            size = plt.gcf().get_size_inches().mean()**2/500
+            plt.scatter(
+                shuffled.values.real,
+                shuffled.values.imag,
+                c=np.take(['#1f77b4', '#ff7f0e', '#2ca02c'], shuffled.index.get_level_values('prep')),
+                s=size,
+            )
 
         # Draw a marker at each mean.
         for i in range(3):
@@ -219,6 +220,8 @@ class QutritMeasureAnalysis(Analysis):
         plt.gca().set_aspect(1.0)
         plt.grid()
         plt.legend(loc='upper left')
+
+        return self
 
 
 class QutritClassifier:
