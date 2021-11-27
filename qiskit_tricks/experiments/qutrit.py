@@ -1,7 +1,6 @@
 # Required in Python 3.7 to enable PEP 563 -- Postponed Evaluation of Annotations
 from __future__ import annotations
-from typing import Optional, Union, overload
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union, overload
 
 import numpy as np
 import pandas as pd
@@ -9,7 +8,7 @@ from qiskit.circuit import ClassicalRegister, Gate, QuantumCircuit
 from qiskit.compiler.assembler import MeasLevel, MeasReturnType
 import scipy.optimize
 
-from qiskit_tricks.experiments import Experiment, Analysis
+from qiskit_tricks.experiments import Analysis, Experiment
 
 
 __all__ = [
