@@ -237,10 +237,14 @@ class Analysis:
 
             for k in new_self._tables:
                 table = getattr(new_self, k)
+                assert table is not None
                 if table.index.names.difference(kwargs.keys()):
                     table = table.droplevel(list(kwargs.keys()))
                 else:
-                    table = table.iloc[0]
+                    if not table.empty:
+                        table = table.iloc[0]
+                    else:
+                        table = None
                 setattr(new_self, k, table)
 
         return new_self
@@ -253,40 +257,61 @@ class Analysis:
             new_self.index = None
             for k in self._tables:
                 table = getattr(new_self, k)
+                assert table is not None
                 if table.index.names.difference(self.index.names):
                     table = table.droplevel(self.index.names)
                 else:
-                    table = table.iloc[0]
+                    if not table.empty:
+                        table = table.iloc[0]
+                    else:
+                        table = None
                 setattr(new_self, k, table)
             return new_self
 
         new_self = self._new_like()
-        new_index = self.index[x]
+        new_self.index = new_index = self.index[x]
         new_tables = defaultdict(list)
+
+        if new_index.empty:
+            for name in self._tables:
+                table = getattr(self, name)
+                assert table is not None
+                setattr(new_self, name, table[0:0])
+            return new_self
 
         for key in new_index:
             if isinstance(new_index, pd.MultiIndex):
                 assert isinstance(key, tuple)
                 for name in self._tables:
                     table = getattr(self, name)
-                    new_tables[name].append(table.xs(
-                        key,
-                        level=new_index.names,
-                        drop_level=False,
-                    ))
+                    assert table is not None
+                    try:
+                        new_tables[name].append(table.xs(
+                            key,
+                            level=new_index.names,
+                            drop_level=False,
+                        ))
+                    except KeyError:
+                        new_tables[name].append(table.iloc[0:0])
             else:
                 for name in self._tables:
                     table = getattr(self, name)
+                    assert table is not None
                     if isinstance(table.index, pd.MultiIndex):
-                        new_tables[name].append(table.xs(
-                            key,
-                            level=new_index.name,
-                            drop_level=False,
-                        ))
+                        try:
+                            new_tables[name].append(table.xs(
+                                key,
+                                level=new_index.name,
+                                drop_level=False,
+                            ))
+                        except KeyError:
+                            new_tables[name].append(table.iloc[0:0])
                     else:
-                        new_tables[name].append(table.loc[[key]])
+                        if key in table.index:
+                            new_tables[name].append(table.loc[[key]])
+                        else:
+                            new_tables[name].append(table.iloc[0:0])
 
-        new_self.index = new_index
         for k, v in new_tables.items():
             setattr(new_self, k, pd.concat(v))
 
@@ -299,7 +324,7 @@ class Analysis:
             setattr(new_self, k, None)
         return new_self
 
-    def caption(self: _Self) -> _Self:
+    def caption(self: _Self, loc='lower right') -> _Self:
         """Add a descriptive caption to the current axes."""
         if self.index is None:
             return self
@@ -319,7 +344,7 @@ class Analysis:
             caption,
             prop=dict(fontfamily='monospace', alpha=0.5),
             frameon=True,
-            loc='lower right',
+            loc=loc,
         )
         at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
         at.patch.set_alpha(0.5)
