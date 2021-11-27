@@ -1,18 +1,27 @@
 from abc import ABC, ABCMeta, abstractmethod
+from collections import defaultdict
+import copy
 from typing import Any, Dict, Iterable, List, Optional, Sequence, TypeVar, Union, cast
 
 from injector import Inject
+from matplotlib.offsetbox import AnchoredText
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from qiskit.circuit import QuantumCircuit, QuantumRegister
 from qiskit.providers import JobV1 as Job
 from qiskit.providers.backend import BackendV1 as Backend
+from qiskit.result import Result
 from qiskit_experiments.calibration_management import BackendCalibrations
 
+from qiskit_tricks.result import resultdf
 from qiskit_tricks.transform import parallelize_circuits
 
 
-__all__ = ['Experiment']
+__all__ = [
+    'Experiment',
+    'Analysis',
+]
 
 
 class ExperimentMeta(ABCMeta):
@@ -148,3 +157,172 @@ class Experiment(ABC, metaclass=ExperimentMeta):
     @abstractmethod
     def build(self, circuit: QuantumCircuit, **kwargs) -> None:
         ...
+
+
+class Analysis:
+    dont_groupby: Sequence[str] = ()
+
+    _Self = TypeVar('_Self', bound='Analysis')
+
+    source: Union[pd.Series, pd.DataFrame]
+
+    def __init__(self, source: Union[Job, Result, pd.Series, pd.DataFrame], **kwargs) -> None:
+        if isinstance(source, (Job, Result)):
+            source = resultdf(source)
+        else:
+            source = source.copy()
+        assert isinstance(source, (pd.Series, pd.DataFrame))
+
+        tables = {'source': source}
+
+        if source.index.names.difference(self.dont_groupby):
+            self.index = index = source.index.droplevel(
+                [x for x in self.dont_groupby if x in source.index.names]
+            ).unique()
+            groupby = source.groupby(index.names)
+            tables_parts = defaultdict(list)
+            for _, group in groupby:
+                group = group.droplevel(index.names)
+                new_tables = self.create_tables(group, **kwargs) or {}
+                for k, v in new_tables.items():
+                    tables_parts[k].append(v)
+            for k, v in tables_parts.items():
+                table = pd.concat(v, keys=index, names=index.names)
+                if isinstance(v[0], pd.Series):
+                    # Heuristic to determine if series levels should be unstacked into a dataframe.
+                    if v[0].index.names[0] == None:
+                        table = table.unstack(v[0].index.names)
+                tables[k] = table
+        else:
+            self.index = None
+            tables.update(self.create_tables(source, **kwargs) or {})
+            self._tables = list(tables.keys())
+
+        self._tables = list(tables.keys())
+        for k, v in tables.items():
+            setattr(self, k, v)
+
+    def create_tables(
+            self,
+            data: Union[pd.Series, pd.DataFrame],
+            **kwargs
+    ) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
+        return {}
+
+    def first(self: _Self) -> _Self:
+        return self.nth(0)
+
+    def nth(self: _Self, n: int) -> _Self:
+        if self.index is None and n == 0:
+            return self
+
+        return self[[n]]
+
+    def xs(self: _Self, key: Any = None, *, drop_level=False, **kwargs) -> _Self:
+        assert self.index is not None
+
+        if key is not None:
+            new_self = self[[self.index.get_loc(key)]]
+        else:
+            mask = self.index.to_frame()[kwargs.keys()].agg(lambda x: x.to_dict() == kwargs, axis=1)
+            new_self = self[mask]
+
+        assert new_self.index is not None
+
+        if drop_level:
+            if self.index.names.difference(kwargs.keys()):
+                new_self.index = new_self.index.droplevel(list(kwargs.keys()))
+            else:
+                new_self.index = None
+
+            for k in new_self._tables:
+                table = getattr(new_self, k)
+                if table.index.names.difference(kwargs.keys()):
+                    table = table.droplevel(list(kwargs.keys()))
+                else:
+                    table = table.iloc[0]
+                setattr(new_self, k, table)
+
+        return new_self
+
+    def __getitem__(self: _Self, x: Any) -> _Self:
+        assert self.index is not None
+
+        if isinstance(x, int):
+            new_self = self[[x]]
+            new_self.index = None
+            for k in self._tables:
+                table = getattr(new_self, k)
+                if table.index.names.difference(self.index.names):
+                    table = table.droplevel(self.index.names)
+                else:
+                    table = table.iloc[0]
+                setattr(new_self, k, table)
+            return new_self
+
+        new_self = self._new_like()
+        new_index = self.index[x]
+        new_tables = defaultdict(list)
+
+        for key in new_index:
+            if isinstance(new_index, pd.MultiIndex):
+                assert isinstance(key, tuple)
+                for name in self._tables:
+                    table = getattr(self, name)
+                    new_tables[name].append(table.xs(
+                        key,
+                        level=new_index.names,
+                        drop_level=False,
+                    ))
+            else:
+                for name in self._tables:
+                    table = getattr(self, name)
+                    if isinstance(table.index, pd.MultiIndex):
+                        new_tables[name].append(table.xs(
+                            key,
+                            level=new_index.name,
+                            drop_level=False,
+                        ))
+                    else:
+                        new_tables[name].append(table.loc[[key]])
+
+        new_self.index = new_index
+        for k, v in new_tables.items():
+            setattr(new_self, k, pd.concat(v))
+
+        return new_self
+
+    def _new_like(self: _Self) -> _Self:
+        new_self = copy.copy(self)
+        new_self.index = None
+        for k in self._tables:
+            setattr(new_self, k, None)
+        return new_self
+
+    def caption(self: _Self) -> _Self:
+        """Add a descriptive caption to the current axes."""
+        if self.index is None:
+            return self
+
+        # Caption is generated from first index.
+        props = dict(zip(self.index.names, self.index[0]))
+
+        if None in props:
+            del props[None]
+
+        if not props:
+            return self
+
+        caption = '\n'.join(map('{0[0]} = {0[1]!r}'.format, props.items()))
+
+        at = AnchoredText(
+            caption,
+            prop=dict(fontfamily='monospace', alpha=0.5),
+            frameon=True,
+            loc='lower right',
+        )
+        at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
+        at.patch.set_alpha(0.5)
+        plt.gca().add_artist(at)
+
+        return self

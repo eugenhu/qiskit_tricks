@@ -1,7 +1,7 @@
 # Required in Python 3.7 to enable PEP 563 -- Postponed Evaluation of Annotations
 from __future__ import annotations
 import datetime
-from typing import Optional
+from typing import Optional, Union, Dict
 
 import numpy as np
 import pandas as pd
@@ -11,8 +11,8 @@ from qiskit_experiments.calibration_management import BackendCalibrations
 from qiskit_experiments.calibration_management.parameter_value import ParameterValue
 
 from qiskit_tricks.experiments import Experiment
+from qiskit_tricks.experiments import Analysis
 from qiskit_tricks.fit import cosine_fit, line_fit
-from qiskit_tricks.result import ResultLike, resultdf
 
 
 __all__ = [
@@ -65,60 +65,48 @@ class EFRabiExperiment(RabiExperiment):
         super().build(circuit, qubit, **params)
 
 
-class RabiAnalysis:
-    def __init__(self, data: pd.Series, level='amp') -> None:
-        self.data = data
-        self.level = level
-        other_levels = data.index.names.difference([level])
+class RabiAnalysis(Analysis):
+    dont_groupby = ('amp',)
 
-        fit_results = {}
-        signals = []
-        groupby = data.groupby(other_levels)
+    signal: pd.Series
+    fit: pd.Series
 
-        for name, group in groupby:
-            amps = group.index.get_level_values(level)
-            z = group.values.ravel()
+    def create_tables(
+            self,
+            data: Union[pd.Series, pd.DataFrame]
+    ) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
+        amp = data.index.get_level_values('amp')
+        values = data.values.ravel()
 
-            y = line_fit(np.array([z.real, z.imag])).projection
-            y = y - y.mean()
-            y /= 0.5 * np.ptp(y) * np.sign(y[abs(amps).argmin()])
+        y = line_fit(np.array([values.real, values.imag])).projection
+        y = y - y.mean()
+        y /= 0.5 * np.ptp(y) * np.sign(y[abs(amp).argmin()])
 
-            fitres = fit_results[name] = cosine_fit(amps, y)
+        res = cosine_fit(amp, y)
 
-            sig = pd.DataFrame({'obs': y, 'calc': fitres.calculated}, group.index)
-            signals.append(sig)
+        signal = pd.DataFrame({'obs': y, 'calc': res.calculated}, amp)
+        fit = pd.Series({
+            'pi_amp': res.wavelength/2,
+            'pi_amp_err': res.wavelength_err/2,
+            'mean': res.mean,
+            'mean_err': res.mean_err,
+            'origin': res.origin,
+            'origin_err': res.origin_err,
+            'chisq': res.reduced_chisq,
+        })
 
-        self.groups = pd.DataFrame(groupby.groups.keys(), columns=other_levels)
-
-        self.signal = pd.concat(signals)
-        self.fit_info = pd.DataFrame(
-            ({'pi_amp': x.wavelength/2
-             ,'pi_amp_err': x.wavelength_err/2
-             ,'mean': x.mean
-             ,'mean_err': x.mean_err
-             ,'origin': x.origin
-             ,'origin_err': x.origin_err
-             ,'chisq': x.reduced_chisq}
-             for x in fit_results.values()),
-            pd.MultiIndex.from_tuples(fit_results.keys(), names=other_levels),
-        )
-
-    @classmethod
-    def from_experiment(cls, obj: ResultLike, **kwargs) -> RabiAnalysis:
-        return cls(resultdf(obj), **kwargs)
+        return dict(signal=signal, fit=fit)
 
     def update(
             self,
             calibrations: BackendCalibrations,
             radians=np.pi,
-            amp: Optional[str] = None,
+            amp='amp',
             qubit='qubit',
             schedule='pulse',
             group='default'
     ) -> None:
-        amp = amp or self.level
-
-        for i, row in self.fit_info.reset_index().iterrows():
+        for _, row in self.fit.reset_index().iterrows():
             calibrations.add_parameter_value(
                 value=ParameterValue(
                     value=radians/np.pi * row['pi_amp'],
@@ -131,38 +119,31 @@ class RabiAnalysis:
                 schedule=row[schedule],
             )
 
-    def plot(self, i: Optional[int] = None, **kwargs):
+    def plot(self, *, c: Optional[str] = None, label: Optional[str] = None):
         import matplotlib.pyplot as plt
 
-        if i is None:
-            mask = self.groups[kwargs.keys()].agg(lambda x: x.to_dict() == kwargs, axis=1)
-            candidates = self.groups.index[mask]
-            if len(candidates) == 0:
-                raise ValueError(f"No groups for {kwargs}")
-            i = candidates[0]
+        signal = self.first().signal
 
-        if i is not None:
-            kwargs = self.groups.iloc[i].to_dict()
+        if self.index is not None:
+            key = self.first().index.to_frame().iloc[0].to_dict()
+            if label:
+                label = label.format(**key)
+            if c:
+                c = c.format(**key)
 
-        from matplotlib.offsetbox import AnchoredText
+        amp = signal.index.get_level_values('amp')
 
-        caption = '\n'.join(map('{0[0]} = {0[1]!r}'.format, self.groups.iloc[i].items()))
-
-        at = AnchoredText(
-            caption,
-            prop=dict(fontfamily='monospace', alpha=0.5),
-            frameon=True,
-            loc='lower right',
+        plt.plot(
+            amp,
+            signal['calc'],
+            c=c,
+            alpha=0.5,
+            label=label,
         )
-        at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
-        at.patch.set_alpha(0.5)
-        plt.gca().add_artist(at)
+        plt.scatter(amp, signal['obs'], c=c)
+        plt.grid(True)
 
-        sig = self.signal.xs(tuple(kwargs.values()), level=tuple(kwargs.keys()))
-
-        plt.plot(sig.index, sig['calc'], c=f'C{i}', alpha=0.5)
-        plt.scatter(sig.index, sig['obs'], c=f'C{i}')
-        plt.grid()
-
-        plt.xlabel(self.level)
+        plt.xlabel('amplitude')
         plt.ylabel('signal [a.u.]')
+
+        return self
