@@ -185,12 +185,12 @@ def create_circuit_interference_graph(
     return graph
 
 
-def circuit_has_calibration(circ, name, qubits, gate_params):
+def circuit_has_calibration(circ, name, qubits, params):
     for gate_name, gate_dict in circ.calibrations.items():
         if gate_name != name: continue
         for gate_qubits, gate_params in gate_dict:
             if gate_qubits != tuple(qubits): continue
-            if gate_params != tuple(gate_params): continue
+            if gate_params != tuple(params): continue
             return True
 
     return False
