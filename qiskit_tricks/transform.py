@@ -73,8 +73,6 @@ def parallelize_circuits(
 
 
 def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
-    from qiskit.converters import circuit_to_dag
-
     if len(circuits) == 0:
         raise ValueError("Got empty circuits.")
 
@@ -87,8 +85,7 @@ def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
     creg_counter = -1
     used_qubits: set[Qubit] = set()
     for circ in circuits:
-        dag = circuit_to_dag(circ)
-        active_qubits = set(dag.qubits) - set(dag.idle_wires())
+        active_qubits = get_active_qubits(circ)
 
         if used_qubits & active_qubits:
             raise ValueError("Circuits have overlapping active qubits.")
@@ -104,7 +101,7 @@ def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
         # Handle empty circuit edge case.
         if circ:
             host_circ.append(
-                circ.to_instruction(),
+                circ,
                 qargs=qubits,
                 cargs=itertools.chain(*cregs),
             )
@@ -158,8 +155,6 @@ def create_circuit_interference_graph(
         circuits: Sequence[QuantumCircuit],
         qubit_graph: retworkx.PyGraph,
 ) -> retworkx.PyGraph:
-    from qiskit.converters import circuit_to_dag
-
     graph = retworkx.PyGraph(multigraph=False)
     graph.add_nodes_from(circuits)
 
@@ -167,8 +162,8 @@ def create_circuit_interference_graph(
         return graph
 
     circuit_qubits = {
-        i: set(dag.qubits) - set(dag.idle_wires())
-        for i, dag in enumerate(map(circuit_to_dag, circuits))
+        i: get_active_qubits(circ)
+        for i, circ in enumerate(circuits)
     }
 
     for i, i_qubits in circuit_qubits.items():
@@ -183,6 +178,10 @@ def create_circuit_interference_graph(
             graph.add_edge(i, j, None)
 
     return graph
+
+
+def get_active_qubits(circuit: QuantumCircuit) -> set:
+    return set().union(*[qubits for gate, qubits, clbits in circuit.data])
 
 
 def circuit_has_calibration(circ, name, qubits, params):
