@@ -76,7 +76,7 @@ def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
     if len(circuits) == 0:
         raise ValueError("Got empty circuits.")
 
-    qubits = check_circuits_same_qubits(circuits)
+    check_circuits_same_qubits(circuits)
     qregs = circuits[0].qregs
 
     host_circ = QuantumCircuit(*qregs)
@@ -98,22 +98,15 @@ def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
             cregs.append(ClassicalRegister(orig_creg.size, f'c{creg_counter}'))
         host_circ.add_register(*cregs)
 
-        # Handle empty circuit edge case.
-        if circ:
-            host_circ.append(
-                circ,
-                qargs=qubits,
-                cargs=itertools.chain(*cregs),
-            )
-
-        # Merge calibrations.
+        # Check if conflicting calibrations exist.
         for gate_name, gate_dict in circ.calibrations.items():
-            for (gate_qubits, gate_params), gate_schedule in gate_dict.items():
+            for gate_qubits, gate_params in gate_dict.keys():
                 if circuit_has_calibration(host_circ, gate_name, gate_qubits, gate_params):
                     raise ValueError(
                         "Multiple circuits contain calibrations for the same (gate, qubits, params)"
                     )
-                host_circ.add_calibration(gate_name, gate_qubits, gate_schedule, gate_params)
+
+        host_circ.compose(circ, clbits=list(itertools.chain(*cregs)), inplace=True)
 
         circ_info = {
             'name': circ.name,
@@ -123,8 +116,6 @@ def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
             circ_info['metadata'] = circ.metadata
 
         host_circ.metadata['subcircuits'].append(circ_info)
-
-    host_circ = host_circ.decompose()
 
     return host_circ
 
