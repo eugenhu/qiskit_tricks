@@ -176,14 +176,12 @@ def get_active_qubits(circuit: QuantumCircuit) -> set:
 
 
 def circuit_has_calibration(circ, name, qubits, params):
-    for gate_name, gate_dict in circ.calibrations.items():
-        if gate_name != name: continue
-        for gate_qubits, gate_params in gate_dict:
-            if gate_qubits != tuple(qubits): continue
-            if gate_params != tuple(params): continue
-            return True
+    try:
+        gate_dict = circ.calibrations[name]
+    except KeyError:
+        return False
 
-    return False
+    return (tuple(qubits), tuple(params)) in gate_dict
 
 
 def uncombine_result(result: ExperimentResult) -> list[ExperimentResult]:
