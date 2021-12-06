@@ -100,23 +100,28 @@ class RabiAnalysis(Analysis):
     def update(
             self,
             calibrations: BackendCalibrations,
-            radians=np.pi,
+            radians: Union[float, str] = np.pi,
             amp='amp',
-            qubit='qubit',
-            schedule='pulse',
-            group='default'
+            qubit='{qubit}',
+            schedule='{pulse}',
+            group='default',
     ) -> None:
         for _, row in self.fit.reset_index().iterrows():
+            if isinstance(radians, str):
+                radiansf = float(radians.format(**row))
+            else:
+                radiansf = radians
+
             calibrations.add_parameter_value(
                 value=ParameterValue(
-                    value=radians/np.pi * row['pi_amp'],
+                    value=radiansf/np.pi * row['pi_amp'],
                     date_time=datetime.datetime.now(),
                     exp_id=row.get('job_id'),
-                    group=group,
+                    group=group.format(**row),
                 ),
-                param=amp,
-                qubits=row[qubit],
-                schedule=row[schedule],
+                param=amp.format(**row),
+                qubits=int(qubit.format(**row)),
+                schedule=schedule.format(**row),
             )
 
     def plot(self, *, c: Optional[str] = None, label: Optional[str] = None):
