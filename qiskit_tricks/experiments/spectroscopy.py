@@ -46,7 +46,7 @@ class SpectroscopyExperiment(Experiment):
 
         if freq is None:
             assert freq_offset is not None
-            lo_freq = cast(float, self.calibrations.get_parameter_value('qubit_lo_freq', qubits=0))
+            lo_freq = cast(float, self.calibrations.get_parameter_value('qubit_lo_freq', qubits=qubit))
             freq = lo_freq + freq_offset
 
         if amp is None:
