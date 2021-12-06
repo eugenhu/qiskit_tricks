@@ -55,12 +55,14 @@ class Experiment(ABC, metaclass=ExperimentMeta):
         tmp = []
         for args_i, kwargs_i in self._broadcast_args(*args, **kwargs):
             params = self.generate_parameters(*args_i, **kwargs_i)
-            if isinstance(params, tuple):
+            if isinstance(params, pd.DataFrame):
+                pass
+            elif isinstance(params, tuple):
                 params = pd.DataFrame([params], columns=self.parameter_names)
             elif isinstance(params, Iterable):
                 params = pd.DataFrame(params, columns=self.parameter_names)
             else:
-                assert isinstance(params, pd.DataFrame)
+                raise TypeError
             tmp.append(params)
         self.parameters_table = pd.concat(tmp, ignore_index=True)
         return self
@@ -74,7 +76,7 @@ class Experiment(ABC, metaclass=ExperimentMeta):
             kwargs_i = dict(zip(kwargs.keys(), x[len(args):]))
             yield args_i, kwargs_i
 
-    def generate_parameters(self, *args, **params) -> Optional[dict]:
+    def generate_parameters(self, *args, **params) -> Union[Iterable, pd.DataFrame]:
         parameter_names = self.parameter_names
 
         for i, x in enumerate(args):
