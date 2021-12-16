@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler.assembler import MeasLevel, MeasReturnType
-from qiskit.pulse import DriveChannel, Gaussian, Play, Schedule
+from qiskit.pulse import DriveChannel, Gaussian, Play, Schedule, ShiftPhase, Call, Waveform
 from qiskit.result.models import (
     ExperimentResult,
     ExperimentResultData,
@@ -19,6 +19,7 @@ from qiskit_tricks.transform import (
     create_qubit_interference_graph,
     parallelize_circuits,
     uncombine_result,
+    bake_schedule,
 )
 
 
@@ -639,6 +640,80 @@ def test_uncombine_result_no_subcircuits():
         header=QobjExperimentHeader(),
     )
     assert uncombine_result(result) == [result]
+
+
+def test_bake_schedule():
+    dchan = DriveChannel(3)
+    sched1 = Schedule(ShiftPhase(0.1, dchan))
+    sched2 = Schedule(
+        ShiftPhase(0.2, dchan),
+        Play(Gaussian(32, 0.5, 8), dchan),
+    )
+
+    got = bake_schedule(Schedule(
+        (0, Call(sched1)),
+        (0, Call(sched2)),
+        (32, Play(Gaussian(64, 0.1, 12), dchan)),
+        (96, Call(sched2)),
+        (128, Call(sched2)),
+    ))
+
+    samples = np.zeros(160, complex)
+    samples[  0: 32] = Gaussian(32, 0.5, 8).get_waveform().samples
+    samples[ 32: 96] = Gaussian(64, 0.1, 12).get_waveform().samples
+    samples[ 96:128] = np.exp(0.2j) * Gaussian(32, 0.5, 8).get_waveform().samples
+    samples[128:160] = np.exp(0.4j) * Gaussian(32, 0.5, 8).get_waveform().samples
+
+    expect = (
+        (  0, ShiftPhase(0.1 + 0.2, dchan)),
+        (  0, Play(Waveform(samples), dchan)),
+        (160, ShiftPhase(0.2 + 0.2, dchan)),
+    )
+    
+    assert len(got.instructions) == 3
+    t0, inst0 = got.instructions[0]
+    t1, inst1 = got.instructions[1]
+    t2, inst2 = got.instructions[2]
+
+    assert t0 == expect[0][0]
+    assert isinstance(inst0, ShiftPhase)
+    assert np.allclose(inst0.phase, expect[0][1].phase)
+    assert inst0.channel == dchan
+
+    assert t1 == expect[1][0]
+    assert isinstance(inst1, Play)
+    assert np.allclose(inst1.pulse.samples, expect[1][1].pulse.samples)
+    assert inst1.channel == dchan
+
+    assert t2 == expect[2][0]
+    assert isinstance(inst2, ShiftPhase)
+    assert np.allclose(inst2.phase, expect[2][1].phase)
+    assert inst2.channel == dchan
+
+
+def test_bake_schedule_with_min_duration():
+    dchan = DriveChannel(0)
+
+    got = bake_schedule(
+        Schedule(
+            Play(Gaussian(48, 0.1, 12), dchan),
+        ),
+        min_duration=100,
+    )
+
+    samples = np.zeros(100, complex)
+    samples[:48] = Gaussian(48, 0.1, 12).get_waveform().samples
+
+    expect = (
+        (0, Play(Waveform(samples), dchan)),
+    )
+    
+    assert len(got.instructions) == 1
+    t0, inst0 = got.instructions[0]
+
+    assert t0 == expect[0][0]
+    assert isinstance(inst0, Play)
+    assert np.allclose(inst0.pulse.samples, expect[0][1].pulse.samples)
 
 
 def assert_circuit_eq(a, b):

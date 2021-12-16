@@ -1,11 +1,13 @@
 from collections.abc import Sequence
 import copy
 import itertools
-from typing import Iterable, Literal, overload
+from typing import Iterable, Literal, NamedTuple, overload, Optional
 
 import numpy as np
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, Qubit
+from qiskit.circuit.parameterexpression import ParameterExpression
 from qiskit.compiler.assembler import MeasLevel
+import qiskit.pulse as qpulse
 from qiskit.result.models import ExperimentResult
 import retworkx
 
@@ -17,6 +19,7 @@ __all__ = [
     'combine_circuits',
     'uncombine_result',
     'has_subcircuits',
+    'bake_schedule',
 ]
 
 
@@ -245,3 +248,75 @@ def has_subcircuits(expresult: ExperimentResult) -> bool:
         return True
     else:
         return False
+
+
+def bake_schedule(sched, min_duration: Optional[int] = None):
+    assert len(sched.channels) == 1
+    assert isinstance(chan := sched.channels[0], qpulse.DriveChannel)
+    baked = _bake_schedule(sched)
+    with qpulse.build(default_alignment='sequential') as sched:
+        if baked.pre_phase: qpulse.shift_phase(baked.pre_phase, chan)
+        if baked.samples.size > 0:
+            samples = baked.samples
+            if min_duration and baked.samples.size < min_duration:
+                samples = np.pad(samples, (0, min_duration-samples.size), constant_values=0.0)
+            qpulse.play(qpulse.Waveform(samples), chan)
+        if baked.post_phase: qpulse.shift_phase(baked.post_phase, chan)
+    return sched
+
+
+class BakedSchedule(NamedTuple):
+    pre_phase: float
+    post_phase: float
+    samples: np.ndarray
+
+
+def _bake_schedule(sched):
+    buffer = np.zeros(sched.duration, complex)
+
+    pre_phase = 0.0
+    played = False
+    phase = 0.0
+
+    for t, inst in sched.instructions:
+        if isinstance(inst, qpulse.Delay): continue
+
+        if isinstance(inst, qpulse.ShiftPhase):
+            assert not isinstance(inst.phase, ParameterExpression)
+            if not played:
+                pre_phase += inst.phase
+            else:
+                phase = inst.phase
+        elif isinstance(inst, qpulse.Play):
+            played = True
+            if isinstance(inst.pulse, qpulse.ParametricPulse):
+                samples = inst.pulse.get_waveform().samples
+            elif isinstance(inst.pulse, qpulse.Waveform):
+                samples = inst.pulse.samples
+            else:
+                raise ValueError(f"Unknown pulse type: {samples}")
+            buffer[t:t+samples.size] = np.exp(1j*phase) * samples
+        elif isinstance(inst, qpulse.Call):
+            baked = _bake_schedule(inst.subroutine)
+
+            if not played:
+                pre_phase += baked.pre_phase
+            else:
+                phase += baked.pre_phase
+
+            if baked.samples.size > 0:
+                played = True
+                buffer[t:t+baked.samples.size] = np.exp(1j*phase) * baked.samples
+
+            if not played:
+                pre_phase += baked.post_phase
+            else:
+                phase += baked.post_phase
+        else:
+            raise ValueError(f"Unsupported instruction: {inst}")
+
+    return BakedSchedule(
+        pre_phase,
+        phase,
+        buffer,
+    )
