@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from qiskit.circuit import ClassicalRegister, Gate, QuantumCircuit
 from qiskit.compiler.assembler import MeasLevel, MeasReturnType
-from qiskit_experiments.calibration_management import BackendCalibrations
+from qiskit_experiments.calibration_management import Calibrations
 from qiskit_experiments.calibration_management.parameter_value import ParameterValue
 
 from qiskit_tricks.experiments import Experiment
@@ -99,7 +99,7 @@ class RabiAnalysis(Analysis):
 
     def update(
             self,
-            calibrations: BackendCalibrations,
+            calibrations: Calibrations,
             radians: Union[float, str] = np.pi,
             amp='amp',
             qubit='{qubit}',

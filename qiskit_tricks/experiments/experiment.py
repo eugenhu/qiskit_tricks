@@ -12,7 +12,7 @@ from qiskit.circuit import QuantumCircuit, QuantumRegister
 from qiskit.providers import JobV1 as Job
 from qiskit.providers.backend import BackendV1 as Backend
 from qiskit.result import Result
-from qiskit_experiments.calibration_management import BackendCalibrations
+from qiskit_experiments.calibration_management import Calibrations
 
 from qiskit_tricks.result import resultdf
 from qiskit_tricks.transform import parallelize_circuits
@@ -37,7 +37,7 @@ class Experiment(ABC, metaclass=ExperimentMeta):
     parameter_names: Sequence[str] = ()
 
     backend: Backend
-    calibrations: BackendCalibrations
+    calibrations: Calibrations
 
     _parallelize: Optional[list] = None
 
@@ -46,10 +46,10 @@ class Experiment(ABC, metaclass=ExperimentMeta):
     def __init__(
             self,
             backend: Inject[Backend],
-            calibrations: Inject[Optional[BackendCalibrations]] = None,
+            calibrations: Inject[Optional[Calibrations]] = None,
     ) -> None:
         self.backend = backend
-        self.calibrations = calibrations or BackendCalibrations(backend)
+        self.calibrations = calibrations or Calibrations.from_backend(backend)
 
     def configure(self: _Self, *args, **kwargs) -> _Self:
         tmp = []
