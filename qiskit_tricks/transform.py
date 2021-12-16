@@ -286,7 +286,7 @@ def _bake_schedule(sched):
             if not played:
                 pre_phase += inst.phase
             else:
-                phase = inst.phase
+                phase += inst.phase
         elif isinstance(inst, qpulse.Play):
             played = True
             if isinstance(inst.pulse, qpulse.ParametricPulse):

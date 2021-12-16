@@ -655,6 +655,7 @@ def test_bake_schedule():
         (0, Call(sched2)),
         (32, Play(Gaussian(64, 0.1, 12), dchan)),
         (96, Call(sched2)),
+        (128, ShiftPhase(0.1, dchan)),
         (128, Call(sched2)),
     ))
 
@@ -662,12 +663,12 @@ def test_bake_schedule():
     samples[  0: 32] = Gaussian(32, 0.5, 8).get_waveform().samples
     samples[ 32: 96] = Gaussian(64, 0.1, 12).get_waveform().samples
     samples[ 96:128] = np.exp(0.2j) * Gaussian(32, 0.5, 8).get_waveform().samples
-    samples[128:160] = np.exp(0.4j) * Gaussian(32, 0.5, 8).get_waveform().samples
+    samples[128:160] = np.exp(0.5j) * Gaussian(32, 0.5, 8).get_waveform().samples
 
     expect = (
         (  0, ShiftPhase(0.1 + 0.2, dchan)),
         (  0, Play(Waveform(samples), dchan)),
-        (160, ShiftPhase(0.2 + 0.2, dchan)),
+        (160, ShiftPhase(0.5, dchan)),
     )
 
     assert len(got.instructions) == 3
