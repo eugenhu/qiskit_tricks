@@ -669,7 +669,7 @@ def test_bake_schedule():
         (  0, Play(Waveform(samples), dchan)),
         (160, ShiftPhase(0.2 + 0.2, dchan)),
     )
-    
+
     assert len(got.instructions) == 3
     t0, inst0 = got.instructions[0]
     t1, inst1 = got.instructions[1]
@@ -707,7 +707,7 @@ def test_bake_schedule_with_min_duration():
     expect = (
         (0, Play(Waveform(samples), dchan)),
     )
-    
+
     assert len(got.instructions) == 1
     t0, inst0 = got.instructions[0]
 
