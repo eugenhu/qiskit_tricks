@@ -124,8 +124,17 @@ class Experiment(ABC, metaclass=ExperimentMeta):
     def run_config(self, **override) -> Dict[str, Any]:
         run_config: Dict[str, Any] = {}
 
-        run_config['qubit_lo_freq'] = self.calibrations.get_qubit_frequencies()
-        run_config['meas_lo_freq'] = self.calibrations.get_meas_frequencies()
+        n_qubits = self.backend.configuration().n_qubits
+
+        run_config['qubit_lo_freq'] = [
+            self.calibrations.get_parameter_value('drive_freq', qubits=i)
+            for i in range(n_qubits)
+        ]
+
+        run_config['meas_lo_freq'] = [
+            self.calibrations.get_parameter_value('meas_freq', qubits=i)
+            for i in range(n_qubits)
+        ]
 
         if isinstance(self.default_run_config, dict):
             run_config.update(self.default_run_config)

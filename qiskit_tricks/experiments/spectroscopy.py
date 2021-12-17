@@ -46,7 +46,7 @@ class SpectroscopyExperiment(Experiment):
 
         if freq is None:
             assert freq_offset is not None
-            lo_freq = cast(float, self.calibrations.get_parameter_value('qubit_lo_freq', qubits=qubit))
+            lo_freq = cast(float, self.calibrations.get_parameter_value('drive_freq', qubits=qubit))
             freq = lo_freq + freq_offset
 
         if amp is None:
@@ -63,13 +63,13 @@ class SpectroscopyExperiment(Experiment):
         circuit.append(self._gate, [qubit])
         circuit.measure(qubit, creg[0])
 
-        run_config = self.run_config()
+        lo_freq = cast(float, self.calibrations.get_parameter_value('drive_freq', qubits=qubit))
         dt = self.backend.configuration().dt
         dchan = qpulse.DriveChannel(qubit)
         sigma_ = sigma/dt
         num_samples = max(int(16*round(4*sigma_/16)), 64)
         with qpulse.build(self.backend) as sched:
-            with qpulse.frequency_offset(freq - run_config['qubit_lo_freq'][qubit], dchan):
+            with qpulse.frequency_offset(freq - lo_freq, dchan):
                 qpulse.play(qpulse.Gaussian(num_samples, amp, sigma_), dchan)
         circuit.add_calibration(self._gate, [qubit], sched)
 
