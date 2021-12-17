@@ -1,8 +1,9 @@
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from typing import SupportsInt, TypeVar, Union, cast, overload
+from typing import Optional, SupportsInt, TypeVar, Union, cast, overload
 
 from qiskit.circuit import ClassicalRegister
+from qiskit.pulse import Call, Play, Schedule, ScheduleBlock
 
 
 T = TypeVar('T')
@@ -78,3 +79,17 @@ def get_creg_indices(clbit_labels: Sequence[tuple[str, int]]) -> dict[str, list[
     clbits = [cregs[name][index] for name, index in clbit_labels]
     creg_indices = {name: [*map(clbits.index, creg)] for name, creg in cregs.items()}
     return creg_indices
+
+
+def get_play_instruction(sched: Union[Schedule, ScheduleBlock]) -> Optional[Play]:
+    """Return the first Play instruction in `sched`."""
+    for t, inst in sched.instructions:
+        if isinstance(inst, Play):
+            return inst
+        elif isinstance(inst, Call):
+            x = get_play_instruction(inst.subroutine)
+            if x: return x
+        else:
+            continue
+
+    return None

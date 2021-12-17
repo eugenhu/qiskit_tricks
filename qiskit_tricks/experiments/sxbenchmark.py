@@ -12,6 +12,7 @@ from qiskit.compiler.assembler import MeasLevel, MeasReturnType
 import qiskit.pulse as qpulse
 from qiskit.quantum_info import Clifford, StabilizerTable
 
+from qiskit_tricks import bake_schedule, get_play_instruction
 from qiskit_tricks.experiments import Experiment
 
 
@@ -74,46 +75,26 @@ class FourGate(Gate):
         assert not self.is_parameterized()
         theta, phi, lamb = self.params
 
-        play_inst = get_play_instruction(sx_sched)
-        if play_inst is None:
-            raise ValueError("'sx_sched' has no Play instruction.")
+        assert len(sx_sched.channels) == 1
+        assert isinstance(ch := sx_sched.channels[0], qpulse.DriveChannel)
 
-        pulse = play_inst.pulse
-        ch = play_inst.channel
+        pulse = get_play_instruction(sx_sched).pulse
+        assert pulse is not None
 
-        samples: np.ndarray
+        with qpulse.build(default_alignment='sequential') as sched:
+            qpulse.call(sx_sched)
+            qpulse.shift_phase(np.pi - np.pi*phi, ch)
+            qpulse.call(sx_sched)
+            qpulse.shift_phase(np.pi - np.pi*lamb, ch)
+            qpulse.call(sx_sched)
+            qpulse.shift_phase(np.pi - np.pi*theta, ch)
+            qpulse.call(sx_sched)
+            qpulse.shift_phase(np.pi + np.pi*(phi+lamb+theta), ch)
+
         if isinstance(pulse, qpulse.Waveform):
-            samples = pulse.samples
-        elif isinstance(pulse, qpulse.library.ParametricPulse):
-            samples = pulse.get_waveform().samples
-        else:
-            raise RuntimeError
-
-        with qpulse.build() as sched:
-            qpulse.play(
-                qpulse.Waveform(np.concatenate([
-                    samples,
-                    -np.exp(-1j*np.pi*phi)*samples,
-                    np.exp(-1j*np.pi*(phi+lamb))*samples,
-                    -np.exp(-1j*np.pi*(phi+lamb+theta))*samples,
-                ])),
-                ch
-            )
+            sched = bake_schedule(sched)
 
         return sched
-
-
-def get_play_instruction(sched: qpulse.Schedule) -> Optional[qpulse.Play]:
-    for t, inst in sched.instructions:
-        if isinstance(inst, qpulse.Play):
-            return inst
-        elif isinstance(inst, qpulse.Call):
-            x = get_play_instruction(inst.subroutine)
-            if x: return x
-        else:
-            continue
-
-    return None
 
 
 def create_sx_benchmark_sequences(
@@ -281,12 +262,5 @@ class SXBenchmarkExperiment(Experiment):
         circuit.compose(template, qubits=[qubit], inplace=True)
         circuit.measure(qubit, creg[0])
 
-        sx_sched = self.calibrations.get_schedule(pulse, qubit, assign_params=pulse_params)
-        sx_pulse = get_play_instruction(sx_sched).pulse
-
-        if sx_pulse.duration >= 64 or isinstance(sx_pulse, (qpulse.Gaussian, qpulse.GaussianSquare, qpulse.Drag)) and sx_pulse.duration >= 64:
-            circuit.data = circuit.decompose('four').data
-            circuit.add_calibration('sx', [qubit], sx_sched)
-        else:
-            for params, sched in self._get_four_schedules(qubit, pulse, pulse_params).items():
-                circuit.add_calibration('four', [qubit], sched, params)
+        for params, sched in self._get_four_schedules(qubit, pulse, pulse_params).items():
+            circuit.add_calibration('four', [qubit], sched, params)
