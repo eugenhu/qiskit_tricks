@@ -1,6 +1,6 @@
 # Required in Python 3.7 to enable PEP 563 -- Postponed Evaluation of Annotations
 from __future__ import annotations
-import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional, Union
 
 import numpy as np
@@ -122,7 +122,7 @@ class RabiAnalysis(Analysis):
             calibrations.add_parameter_value(
                 value=ParameterValue(
                     value=radiansf/np.pi * row['pi_amp'],
-                    date_time=datetime.datetime.now(),
+                    date_time=datetime.now(timezone.utc).astimezone(),
                     exp_id=row.get('job_id'),
                     group=group.format(**row),
                 ),
