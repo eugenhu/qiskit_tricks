@@ -87,6 +87,8 @@ class PseudoIdentityExperiment(Experiment):
 
 
 class ORRAnalysis(Analysis):
+    """Off-resonance rotation (ORR) analysis."""
+
     dont_groupby = ('reps', 'state')
 
     signal: pd.DataFrame
@@ -173,7 +175,8 @@ class ORRAnalysis(Analysis):
             x = group.index.get_level_values(param)
             plt.scatter(x, group['obs'])
             plt.plot(x, group['calc'], label=f'{rep} reps')
-            plt.gca().axvline(fit.xs(rep, level='reps')['origin'].iloc[0], c='red')
+
+        plt.gca().axvline(fit['origin'].mean(), c='red')
 
         plt.grid(True)
 
