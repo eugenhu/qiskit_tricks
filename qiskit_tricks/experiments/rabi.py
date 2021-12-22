@@ -1,15 +1,17 @@
 # Required in Python 3.7 to enable PEP 563 -- Postponed Evaluation of Annotations
 from __future__ import annotations
 import datetime
-from typing import Optional, Union, Dict
+from typing import Dict, Optional, Union
 
 import numpy as np
 import pandas as pd
 from qiskit.circuit import ClassicalRegister, Gate, QuantumCircuit
 from qiskit.compiler.assembler import MeasLevel, MeasReturnType
+from qiskit.pulse import Constant, Drag, Gaussian, GaussianSquare
 from qiskit_experiments.calibration_management import Calibrations
 from qiskit_experiments.calibration_management.parameter_value import ParameterValue
 
+from qiskit_tricks import bake_schedule, get_play_instruction
 from qiskit_tricks.experiments import Experiment
 from qiskit_tricks.experiments import Analysis
 from qiskit_tricks.fit import cosine_fit, line_fit
@@ -56,6 +58,11 @@ class RabiExperiment(Experiment):
         circuit.measure(qubit, creg[0])
 
         sched = self.calibrations.get_schedule(pulse, qubit, assign_params={'amp': amp})
+        play = get_play_instruction(sched)
+        if play and not isinstance(play.pulse, (Gaussian, GaussianSquare, Drag, Constant)):
+            min_duration = self.backend.configuration().timing_constraints.get('min_length')
+            if min_duration and sched.duration < min_duration:
+                sched = bake_schedule(sched, min_duration=min_duration)
         circuit.add_calibration(self._gate, [qubit], sched)
 
 

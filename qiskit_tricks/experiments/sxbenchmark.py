@@ -91,7 +91,7 @@ class FourGate(Gate):
             qpulse.call(sx_sched)
             qpulse.shift_phase(np.pi + np.pi*(phi+lamb+theta), ch)
 
-        if isinstance(pulse, qpulse.Waveform):
+        if not isinstance(pulse, (qpulse.Gaussian, qpulse.GaussianSquare, qpulse.Drag, qpulse.Constant)):
             sched = bake_schedule(sched)
 
         return sched
