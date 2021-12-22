@@ -93,3 +93,17 @@ def get_play_instruction(sched: Union[Schedule, ScheduleBlock]) -> Optional[Play
             continue
 
     return None
+
+
+def install_parametric_pulse(name, pulse):
+    """Monkey patch install a new parametric pulse."""
+    # XXX: This is very hacky.
+    from enum import Enum
+    import importlib
+    from qiskit.assembler.assemble_schedules import ParametricPulseShapes
+    
+    importlib.import_module('qiskit.assembler.assemble_schedules') \
+        .ParametricPulseShapes = Enum("ParametricPulseShapes", {
+            **{t.name: t.value for t in ParametricPulseShapes},
+            name: pulse,
+        })
