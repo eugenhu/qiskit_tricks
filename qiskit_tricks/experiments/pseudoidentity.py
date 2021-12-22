@@ -107,8 +107,8 @@ class ORRAnalysis(Analysis):
         signals = []
         fits = []
         for rep, group in data.groupby('reps'):
-            state0_count = group.xs(0, level='state')#.values
-            state1_count = group.xs(1, level='state')#.values
+            state0_count = group.xs(0, level='state')
+            state1_count = group.xs(1, level='state')
             y = state0_count/(state0_count + state1_count)
 
             x = y.index.get_level_values(param)
