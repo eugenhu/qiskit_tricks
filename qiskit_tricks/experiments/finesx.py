@@ -98,8 +98,8 @@ class FineSXAmpAnalysis(Analysis):
         y = y.values.ravel()
 
         def f(x, freq):
-            origin = np.pi/2 / (2*np.pi*freq + np.pi/2)
-            return 0.5 - 0.5 * np.sin((2*np.pi*freq + np.pi/2)*(x - origin))
+            origin = np.pi/2 / (freq + np.pi/2)
+            return 0.5 - 0.5 * np.sin((freq + np.pi/2)*(x - origin))
 
         popt, pcov = curve_fit(
             f,
@@ -134,7 +134,7 @@ class FineSXAmpAnalysis(Analysis):
         for _, row in self.fit.reset_index().iterrows():
             calibrations.add_parameter_value(
                 value=ParameterValue(
-                    value=(np.pi/2 + row['rotation'])/(np.pi/2) * row['amp'],
+                    value=(np.pi/2)/(np.pi/2 + row['rotation']) * row['amp'],
                     date_time=datetime.now(timezone.utc).astimezone(),
                     exp_id=row.get('job_id'),
                     group=group.format(**row),
@@ -162,7 +162,7 @@ class FineSXAmpAnalysis(Analysis):
 
         plt.plot(
             reps2,
-            0.5 + 0.5*np.cos((np.pi/2 + 2*np.pi*fit['rotation'][0])*reps2),
+            0.5 + 0.5*np.cos((np.pi/2 + fit['rotation'][0])*reps2),
             c=c,
             alpha=0.5,
             label=label,
