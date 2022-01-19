@@ -158,15 +158,18 @@ def find_peaks(signal, prominence=0.1):
 
         p0 = (peak_freq, peak_sigma, peak_height, 0)
         if win.size > 2:
-            popt, pcov = scipy.optimize.curve_fit(
-                gaussian,
-                win.index,
-                win.values,
-                p0=p0,
-                method='trf',
-                x_scale='jac',
-            )
-            out.append((*popt, np.sqrt(pcov[0,0])))
+            try:
+                popt, pcov = scipy.optimize.curve_fit(
+                    gaussian,
+                    win.index,
+                    win.values,
+                    p0=p0,
+                    method='trf',
+                    x_scale='jac',
+                )
+                out.append((*popt, np.sqrt(pcov[0,0])))
+            except RuntimeError:
+                out.append((*p0, np.nan))
         else:
             out.append((*p0, np.nan))
 
