@@ -190,13 +190,20 @@ class Analysis:
             self.index = index = source.index.droplevel(
                 [x for x in self.dont_groupby if x in source.index.names]
             ).unique()
-            groupby = source.groupby(index.names)
+            # groupby(..., sort=False) should preserve order.
+            # see: https://stackoverflow.com/questions/47185894
+            groupby = source.groupby(index.names, sort=False)
             tables_parts = defaultdict(list)
+            sanity_check = []
             for _, group in groupby:
+                sanity_check.append(_)
                 group = group.droplevel(index.names)
                 new_tables = self.create_tables(group, **kwargs) or {}
                 for k, v in new_tables.items():
                     tables_parts[k].append(v)
+
+            assert sanity_check == list(index)
+
             for k, v in tables_parts.items():
                 table = pd.concat(v, keys=index, names=index.names)
                 if isinstance(v[0], pd.Series):
