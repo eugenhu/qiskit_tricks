@@ -151,10 +151,24 @@ class ORRAnalysis(Analysis):
 
         for key in self.index:
             fit = self.fit.xs(key, level=self.index.names, drop_level=False).reset_index()
+
+            origin = None
+            origin_err = None
+            for t in fit.sort_values('origin_err', ascending=True).itertuples():
+                if origin is None:
+                    origin = t.origin
+                    origin_err = t.origin_err
+                else:
+                    x = origin_err**2/(origin_err**2 + t.origin_err**2)
+                    origin = x*t.origin + (1-x)*origin
+                    origin_err = np.sqrt(x**2 * t.origin_err**2 + (1-x)**2 * origin_err**2)
+
+            assert origin is not None
+
             row = fit.iloc[0]
             calibrations.add_parameter_value(
                 value=ParameterValue(
-                    value=fit['origin'].mean(),
+                    value=origin,
                     date_time=datetime.now(timezone.utc).astimezone(),
                     exp_id=row.get('job_id'),
                     group=group.format(**row),
