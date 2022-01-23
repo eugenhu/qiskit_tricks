@@ -46,7 +46,7 @@ class Experiment(ABC, metaclass=ExperimentMeta):
     def __init__(
             self,
             backend: Inject[Backend],
-            calibrations: Inject[Optional[Calibrations]] = None,
+            calibrations: Inject[Calibrations],
     ) -> None:
         self.backend = backend
         self.calibrations = calibrations or Calibrations.from_backend(backend)
