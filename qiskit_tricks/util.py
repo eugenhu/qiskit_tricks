@@ -1,9 +1,23 @@
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from typing import Optional, SupportsInt, TypeVar, Union, cast, overload
+from typing import (
+    Optional,
+    SupportsInt,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    overload,
+)
 
 from qiskit.circuit import ClassicalRegister
-from qiskit.pulse import Call, Play, Schedule, ScheduleBlock
+from qiskit.pulse import (
+    Call,
+    ParametricPulse,
+    Play,
+    Schedule,
+    ScheduleBlock,
+)
 
 
 T = TypeVar('T')
@@ -95,13 +109,13 @@ def get_play_instruction(sched: Union[Schedule, ScheduleBlock]) -> Optional[Play
     return None
 
 
-def install_parametric_pulse(name, pulse):
+def install_parametric_pulse(name: str, pulse: Type[ParametricPulse]) -> None:
     """Monkey patch install a new parametric pulse."""
     # XXX: This is very hacky.
     from enum import Enum
     import importlib
     from qiskit.assembler.assemble_schedules import ParametricPulseShapes
-    
+
     importlib.import_module('qiskit.assembler.assemble_schedules') \
         .ParametricPulseShapes = Enum("ParametricPulseShapes", {
             **{t.name: t.value for t in ParametricPulseShapes},
