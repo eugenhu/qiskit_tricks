@@ -6,6 +6,11 @@ The most useful functions are just `resultdf()` and `parallelize_circuits()`.
 
 See the 'examples' folder for complete examples.
 
+Install from the repo:
+```
+pip install git+https://github.com/eugenhu/qiskit_tricks.git
+```
+
 ## Demo
 1. [resultdf()](#resultdf)
 2. [parallelize_circuits()](#parallelize_circuits)
