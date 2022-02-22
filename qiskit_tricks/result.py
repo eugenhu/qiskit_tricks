@@ -39,7 +39,7 @@ def resultdf(
 
     results, dup_results = filter_unique_results(results)
     if dup_results:
-        warnings.warn("normalize_results() got duplicate job ids, ignoring.", stacklevel=2)
+        warnings.warn("resultdf(): got duplicate job ids, ignoring.", stacklevel=2)
 
     experiment_results = list(itertools.chain.from_iterable(r.results for r in results))
 
