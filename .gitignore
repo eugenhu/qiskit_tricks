@@ -50,3 +50,4 @@ tmtagsHistory
 build/
 scratches/
 *.checkpoints/
+*.ipynb_checkpoints/
