@@ -1,23 +1,9 @@
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from typing import (
-    Optional,
-    SupportsInt,
-    Type,
-    TypeVar,
-    Union,
-    cast,
-    overload,
-)
+from typing import Optional, SupportsInt, Type, TypeVar, Union, cast, overload
 
 from qiskit.circuit import ClassicalRegister
-from qiskit.pulse import (
-    Call,
-    ParametricPulse,
-    Play,
-    Schedule,
-    ScheduleBlock,
-)
+from qiskit.pulse import Call, ParametricPulse, Play, Schedule, ScheduleBlock
 
 
 T = TypeVar('T')
