@@ -294,7 +294,7 @@ def _bake_schedule(sched):
             elif isinstance(inst.pulse, qpulse.Waveform):
                 samples = inst.pulse.samples
             else:
-                raise ValueError(f"Unknown pulse type: {samples}")
+                raise ValueError(f"Unknown pulse type: {inst.pulse}")
             buffer[t:t+samples.size] = np.exp(1j*phase) * samples
         elif isinstance(inst, qpulse.Call):
             baked = _bake_schedule(inst.subroutine)
