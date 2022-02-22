@@ -201,11 +201,11 @@ def find_metadata_keys(result: ExperimentResult, subcircuits=False):
     keys: List[str] = []
 
     def all_metadata_items():
-        metadata = getattr(result.header, 'metadata', {})
+        metadata = getattr(result.header, 'metadata', None) or {}
         yield from metadata.items()
         if subcircuits:
             for subcircuit_info in metadata.get('subcircuits', []):
-                yield from subcircuit_info.get('metadata', {}).items()
+                yield from (subcircuit_info.get('metadata', None) or {}).items()
 
     for k, v in all_metadata_items():
         # Ignore keys starting with an underscore.
@@ -232,7 +232,7 @@ def extract_metadata(result: ExperimentResult, keys: Sequence[str]) -> Tuple[Has
         A sequence of metadata values corresponding to keys.
     """
     metadata_dict: Dict[str, Hashable] = {k: None for k in keys}
-    for k, v in getattr(result.header, 'metadata', {}).items():
+    for k, v in (getattr(result.header, 'metadata', None) or {}).items():
         if k not in keys: continue
         metadata_dict[k] = atomize(v)
     return tuple(metadata_dict.values())

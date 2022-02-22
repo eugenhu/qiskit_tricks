@@ -279,7 +279,7 @@ def uncombine_result(result: ExperimentResult) -> List[ExperimentResult]:
 
 def has_subcircuits(exp_result: ExperimentResult) -> bool:
     """Return True if experiment result has a 'subcircuits' metadata field."""
-    metadata = getattr(exp_result.header, 'metadata', {})
+    metadata = getattr(exp_result.header, 'metadata', None) or {}
     if isinstance(metadata.get('subcircuits', None), Iterable):
         return True
     else:

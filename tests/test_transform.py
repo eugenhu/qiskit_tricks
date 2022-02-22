@@ -5,7 +5,15 @@ import numpy as np
 import pytest
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler.assembler import MeasLevel, MeasReturnType
-from qiskit.pulse import DriveChannel, Gaussian, Play, Schedule, ShiftPhase, Call, Waveform
+from qiskit.pulse import (
+    Call,
+    DriveChannel,
+    Gaussian,
+    Play,
+    Schedule,
+    ShiftPhase,
+    Waveform,
+)
 from qiskit.result.models import (
     ExperimentResult,
     ExperimentResultData,
@@ -14,12 +22,13 @@ from qiskit.result.models import (
 import retworkx
 
 from qiskit_tricks.transform import (
+    bake_schedule,
     combine_circuits,
     create_circuit_interference_graph,
     create_qubit_interference_graph,
+    has_subcircuits,
     parallelize_circuits,
     uncombine_result,
-    bake_schedule,
 )
 
 
@@ -640,6 +649,18 @@ def test_uncombine_result_no_subcircuits():
         header=QobjExperimentHeader(),
     )
     assert uncombine_result(result) == [result]
+
+
+def test_has_subcircuits_when_metadata_is_None():
+    result = ExperimentResult(
+        success=True,
+        shots=1024,
+        data=ExperimentResultData(),
+        header=QobjExperimentHeader(
+            metadata=None,
+        ),
+    )
+    assert has_subcircuits(result) is False
 
 
 def test_bake_schedule():

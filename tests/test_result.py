@@ -329,6 +329,18 @@ def test_extract_metadata():
     assert got == expect
 
 
+def test_extract_metadata_when_metadata_is_None():
+    result = ExperimentResult(
+        success=True,
+        shots=1024,
+        data=ExperimentResultData(),
+        header=QobjExperimentHeader(
+            metadata=None,
+        ),
+    )
+    assert extract_metadata(result, keys=['thing', 'fizz']) == (None, None)
+
+
 def test_find_metadata_keys():
     metadata = {
         'thing': 123,
@@ -393,6 +405,18 @@ def test_find_metadata_keys_with_subcircuits():
     got = find_metadata_keys(result, subcircuits=True)
     expect = ['some', 'thing']
     assert set(got) == set(expect)
+
+
+def test_find_metadata_keys_when_metadata_is_None():
+    result = ExperimentResult(
+        success=True,
+        shots=1024,
+        data=ExperimentResultData(),
+        header=QobjExperimentHeader(
+            metadata=None,
+        ),
+    )
+    assert find_metadata_keys(result) == []
 
 
 def test_ensure_result_with_job():
