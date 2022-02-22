@@ -1,6 +1,6 @@
-from collections.abc import Callable, Collection, Hashable, Iterable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Sequence
 import itertools
-from typing import Optional, Union, overload
+from typing import Optional, Union, overload, Tuple, List, Dict
 import warnings
 
 import numpy as np
@@ -31,10 +31,28 @@ def resultdf(
         drop_extraneous=True,
         **kwargs,
 ) -> Union[pd.Series, pd.DataFrame]:
+    """Convert a qiskit Result (or many Results) into a pandas Series or DataFrame.
+
+    For convenience, Jobs can also be passed. They will be converted to results via Job.result(). If multiple
+    Results are passed, the returned pandas Series or DataFrame is a concatenation of each result. See the
+    project README for how-to/examples.
+
+    Args:
+        result: A Result or Job, or an Iterable of Result or Jobs.
+        results: More Results or Jobs.
+        subcircuits: True if subcircuits should be expanded (will raise an error if no subcircuits), False
+            otherwise. None if subcircuits should be expanded only if they exist.
+        metadata: True if metadata should be extracted, False otherwise. If True, metadata keys will be
+            automatically determined, pass a sequence of keys to manually specify instead.
+        drop_extraneous: Drop 'useless' levels from the resulting series or frame for convenience.
+
+    Returns:
+        The Result or Jobs converted to a pandas Series or DataFrame.
+    """
     if not isinstance(result, Iterable):
         result = [result]
 
-    results: list[Result] = ensure_result(result, *results)
+    results: List[Result] = ensure_result(result, *results)
     del result
 
     results, dup_results = filter_unique_results(results)
@@ -64,34 +82,11 @@ def resultdf(
         'drop_extraneous': drop_extraneous,
     })
 
-    meas_type = check_meas_type(results[0].results[0])
-    job_ids: list[str] = []
+    job_ids: List[str] = []
     tables = []
     for result in results:
         job_ids.append(result.job_id)
-        if not subcircuits:
-            table = tabulate_many_results(meas_type, result.results, **kwargs)
-            tables.append(table)
-        else:
-            circuit_names: list[str] = []
-            inner_tables = []
-            for i, exp_result in enumerate(result.results):
-                assert exp_result.success
-
-                circuit_name = getattr(exp_result.header, 'name', f'unnamed-{i}')
-                if circuit_name in circuit_names:
-                    warnings.warn(f"Duplicate circuit name '{circuit_name}'", stacklevel=2)
-                circuit_names.append(circuit_name)
-
-                table = tabulate_many_results(
-                    meas_type,
-                    uncombine_result(exp_result),
-                    **kwargs,
-                )
-                table.rename_axis(index={'circuit': 'subcircuit'}, inplace=True)
-                inner_tables.append(table)
-            table = pd.concat(inner_tables, keys=circuit_names, names=['circuit'])
-            tables.append(table)
+        tables.append(_resultdf(result, subcircuits, **kwargs))
 
     table = pd.concat(tables, keys=job_ids, names=['job_id'])
 
@@ -104,16 +99,53 @@ def resultdf(
     return table
 
 
+def _resultdf(result: Result, subcircuits: bool, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+    meas_type = check_meas_type(result.results[0])
+
+    if not subcircuits:
+        table = tabulate_many_results(meas_type, result.results, **kwargs)
+    else:
+        circuit_names: List[str] = []
+        subtables = []
+        for i, exp_result in enumerate(result.results):
+            assert exp_result.success
+
+            name = getattr(exp_result.header, 'name', f'unnamed-{i}')
+            if name in circuit_names:
+                warnings.warn(f"Duplicate circuit name '{name}'", stacklevel=2)
+            circuit_names.append(name)
+
+            table = tabulate_many_results(
+                meas_type,
+                uncombine_result(exp_result),
+                **kwargs,
+            )
+            table.rename_axis(index={'circuit': 'subcircuit'}, inplace=True)
+            subtables.append(table)
+        table = pd.concat(subtables, keys=circuit_names, names=['circuit'])
+
+    return table
+
+
 @overload
 def ensure_result(obj: ResultLike) -> Result:
     ...
 @overload
-def ensure_result(obj: Iterable[ResultLike]) -> list[Result]:
+def ensure_result(obj: Iterable[ResultLike]) -> List[Result]:
     ...
 @overload
-def ensure_result(*objs: ResultLike) -> list[Result]:
+def ensure_result(*objs: ResultLike) -> List[Result]:
     ...
 def ensure_result(obj, *objs):
+    """Convert Job or Results to Results.
+
+    Can pass either a single Job or Result argument, multiple Job or Result arguments, or an iterable of Job
+    or Results. Jobs will be waited on to retrieve their results.
+
+    Returns:
+        If a single argument is passed, a single Result is returned. If multiple arguments or an interable
+        is passed, a list of Results is returned.
+    """
     if isinstance(obj, Iterable):
         obj = [*obj, *objs]
     else:
@@ -122,7 +154,7 @@ def ensure_result(obj, *objs):
         else:
             return ensure_result([obj])[0]
 
-    results: list[Result] = []
+    results: List[Result] = []
     for o in obj:
         if isinstance(o, Job):
             results.append(o.result())  # type: ignore
@@ -137,10 +169,10 @@ def ensure_result(obj, *objs):
     return results
 
 
-def filter_unique_results(results: Iterable[Result]) -> tuple[list[Result], list[Result]]:
+def filter_unique_results(results: Iterable[Result]) -> Tuple[List[Result], List[Result]]:
     job_ids: set[str] = set()
-    unq_results: list[Result] = []
-    dup_results: list[Result] = []
+    unq_results: List[Result] = []
+    dup_results: List[Result] = []
 
     for result in results:
         if result.job_id not in job_ids:
@@ -153,7 +185,20 @@ def filter_unique_results(results: Iterable[Result]) -> tuple[list[Result], list
 
 
 def find_metadata_keys(result: ExperimentResult, subcircuits=False):
-    keys: list[str] = []
+    """Find candidate metadata keys in result.
+
+    Search in the 'metadata' header of result. If a key starts with '_', it is ignored. If the value cannot
+    be atomized, it is ignored. Otherwise, the key is a valid and appended to a list of metadata keys to
+    return.
+
+    Args:
+        result: The result to look for metadata.
+        subcircuits: True if subcircuit metadata should be considered.
+
+    Returns:
+        Keys found.
+    """
+    keys: List[str] = []
 
     def all_metadata_items():
         metadata = getattr(result.header, 'metadata', {})
@@ -174,15 +219,38 @@ def find_metadata_keys(result: ExperimentResult, subcircuits=False):
     return keys
 
 
-def extract_metadata(result: ExperimentResult, keys: Collection[str]) -> tuple[Hashable, ...]:
-    metadata_dict: dict[str, Hashable] = {k: None for k in keys}
+def extract_metadata(result: ExperimentResult, keys: Sequence[str]) -> Tuple[Hashable, ...]:
+    """Extract the metadata values from result corresponding to keys.
+
+    Subcircuits are not searched.
+
+    Args:
+        result: The result to extract metadata from.
+        keys: A sequence of metadata keys whose values are wanted.
+
+    Returns:
+        A sequence of metadata values corresponding to keys.
+    """
+    metadata_dict: Dict[str, Hashable] = {k: None for k in keys}
     for k, v in getattr(result.header, 'metadata', {}).items():
         if k not in keys: continue
         metadata_dict[k] = atomize(v)
     return tuple(metadata_dict.values())
 
 
-def atomize(o, _visited: Optional[set] = None) -> Hashable:
+def atomize(o: object, _visited: Optional[set] = None) -> Hashable:
+    """Atomize an object (i.e. make it immutable).
+
+    Instances of: int, float, str, bool, NoneType; are returned as is. Instances of: tuple, list, set; are
+    converted to tuples.
+
+    Args:
+        o: The object to atomize.
+        _visited: Internal parameter to detect cycles.
+
+    Returns:
+        The object converted to an immutable form.
+    """
     _visited = _visited or set()
 
     if id(o) in _visited:
@@ -199,10 +267,8 @@ def atomize(o, _visited: Optional[set] = None) -> Hashable:
 
 def check_meas_type(
         result: ExperimentResult,
-        meas_type: Optional[tuple[MeasLevel, MeasReturnType]] = None,
-) -> tuple[MeasLevel, MeasReturnType]:
-    from qiskit.compiler.assembler import MeasLevel, MeasReturnType
-
+        meas_type: Optional[Tuple[MeasLevel, MeasReturnType]] = None,
+) -> Tuple[MeasLevel, MeasReturnType]:
     def throw_err(reason):
         raise ValueError(f"Heterogeneous {reason} in results")
 
@@ -221,21 +287,21 @@ def check_meas_type(
 
 
 def tabulate_many_results(
-        meas_type: tuple[MeasLevel, MeasReturnType],
+        meas_type: Tuple[MeasLevel, MeasReturnType],
         results: Sequence[ExperimentResult],
         **kwargs,
 ) -> Union[pd.Series, pd.DataFrame]:
-    circuit_names: list[str] = []
+    circuit_names: List[str] = []
     tables = []
 
     for i, result in enumerate(results):
         assert result.success
         check_meas_type(result, meas_type)
 
-        circuit_name = getattr(result.header, 'name', f'unnamed-{i}')
-        if circuit_name in circuit_names:
-            warnings.warn(f"Duplicate circuit name '{circuit_name}'", stacklevel=2)
-        circuit_names.append(circuit_name)
+        name = getattr(result.header, 'name', f'unnamed-{i}')
+        if name in circuit_names:
+            warnings.warn(f"Duplicate circuit name '{name}'", stacklevel=2)
+        circuit_names.append(name)
 
         table = tabulate_result(
             meas_type,
@@ -250,11 +316,11 @@ def tabulate_many_results(
 
 
 def tabulate_result(
-        meas_type: tuple[MeasLevel, MeasReturnType],
+        meas_type: Tuple[MeasLevel, MeasReturnType],
         result: ExperimentResult,
         **kwargs,
 ) -> Union[pd.Series, pd.DataFrame]:
-    tabulators: dict[tuple[MeasLevel, MeasReturnType], Callable] = {
+    tabulators: Dict[Tuple[MeasLevel, MeasReturnType], Callable] = {
         (MeasLevel.KERNELED, MeasReturnType.SINGLE): tabulate_kerneled_result,
         (MeasLevel.KERNELED, MeasReturnType.AVERAGE): tabulate_kerneled_result,
         (MeasLevel.CLASSIFIED, MeasReturnType.AVERAGE): tabulate_classified_result,
@@ -268,7 +334,7 @@ def tabulate_result(
 def tabulate_kerneled_result(
         result: ExperimentResult,
         *,
-        metadata_keys: Sequence[str] =(),
+        metadata_keys: Sequence[str] = (),
         drop_extraneous=False,
 ) -> pd.Series:
     header = result.header
@@ -281,7 +347,7 @@ def tabulate_kerneled_result(
     if meas_return == 'single' and result.shots != memory.shape[0]:
         raise ValueError(f"'shots' attribute does not match memory shape")
 
-    clbit_labels: list[tuple[str, int]] = getattr(header, 'clbit_labels', [])
+    clbit_labels: List[Tuple[str, int]] = getattr(header, 'clbit_labels', [])
     if not clbit_labels:
         # Create a fallback creg with name 'c'.
         clbit_labels = [('c', i) for i in range(num_memory_slots)]
@@ -299,6 +365,7 @@ def tabulate_kerneled_result(
         index_names = ['shot', *index_names]
 
     index = pd.MultiIndex.from_tuples(index, names=index_names)
+
     if drop_extraneous:
         index = drop_extraneous_levels(index, ('bit', 'creg'))
 
@@ -320,7 +387,7 @@ def tabulate_classified_result(
     if num_memory_slots is None:
         num_memory_slots = max(map(int.bit_length, counts.keys()))
 
-    clbit_labels: list[tuple[str, int]] = getattr(header, 'clbit_labels', [])
+    clbit_labels: List[Tuple[str, int]] = getattr(header, 'clbit_labels', [])
     if not clbit_labels:
         # Create a fallback creg with name 'c'.
         clbit_labels = [('c', i) for i in range(num_memory_slots)]
@@ -349,6 +416,17 @@ def tabulate_classified_result(
 
 
 def drop_extraneous_levels(index: pd.Index, drop_order: Sequence) -> pd.Index:
+    """Drop levels in order of `drop_order` from `index`.
+
+    If a level is not present in `index`, or dropping it would make the index non-unique, it is ignored.
+
+    Args:
+        index: The index to drop levels from.
+        drop_order: The levels to drop, in the order passed.
+
+    Returns:
+        The new index after dropping extraneous levels.
+    """
     for level in drop_order:
         if level not in index.names: continue
         new_index = index.droplevel(level)
