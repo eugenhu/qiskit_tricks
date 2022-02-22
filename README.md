@@ -2,7 +2,7 @@
 
 Not an official Qiskit library. Just a collection of convenience functions to use with Qiskit.
 
-The most useful functions are just `resultdf()` and `parallelize_circuits()`.
+The most useful functions are `resultdf()` and `parallelize_circuits()`.
 
 See the [examples](/examples) folder for complete examples.
 
