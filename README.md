@@ -4,7 +4,7 @@ Not an official Qiskit library. Just a collection of convenience functions to us
 
 The most useful functions are just `resultdf()` and `parallelize_circuits()`.
 
-See the 'examples' folder for complete examples.
+See the [examples](/examples) folder for complete examples.
 
 Install from the repo:
 ```
