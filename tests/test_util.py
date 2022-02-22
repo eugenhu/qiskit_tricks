@@ -107,9 +107,9 @@ def test_get_play_instruction():
     play = Play(Gaussian(160, 0.2, 40), d0)
 
     schedule = Schedule(
-        ShiftPhase(3.14, d0),
-        play,
-        ShiftPhase(-3.14, d0),
+        (0, ShiftPhase(3.14, d0)),
+        (0, play),
+        (160, ShiftPhase(-3.14, d0)),
     )
 
     assert get_play_instruction(schedule) == play
