@@ -97,9 +97,9 @@ def resultdf(
 
     if drop_extraneous:
         table.index = drop_extraneous_levels(table.index, ('circuit', 'subcircuit'))
-    
-    # TODO: Include original result objects in table.attrs['results'].
-    # TODO: Add table.attrs['date'] storing the latest completion time of all results.
+
+    # Include original results as an extra attribute.
+    table.attrs['results'] = results
 
     return table
 
