@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 import copy
 import itertools
-from typing import Iterable, Literal, NamedTuple, overload, Optional
+from typing import Iterable, Literal, NamedTuple, overload, Optional, List, Tuple, Set
 
 import numpy as np
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, Qubit
@@ -29,7 +29,7 @@ def parallelize_circuits(
         coupling_map: Sequence[Sequence[int]] = (),
         *,
         return_index: Literal[False] = False,
-) -> list[QuantumCircuit]:
+) -> List[QuantumCircuit]:
     ...
 @overload
 def parallelize_circuits(
@@ -37,7 +37,7 @@ def parallelize_circuits(
         coupling_map: Sequence[Sequence[int]] = (),
         *,
         return_index: Literal[True] = True,
-) -> tuple[list[QuantumCircuit], list[list[int]]]:
+) -> Tuple[List[QuantumCircuit], List[List[int]]]:
     ...
 def parallelize_circuits(
         circuits,
@@ -45,6 +45,24 @@ def parallelize_circuits(
         *,
         return_index=False,
 ):
+    """Same as combine_circuits() but accepts a coupling_map parameter.
+
+    The coupling_map parameter specifies coupled qubits. A circuit with active qubits that couple to another
+    circuit's active qubits will not be combined into one circuit.
+
+    If return_index=True is passed, a list of list of indices is also returned, representing the indices of
+    the original circuits combined into each host circuit.
+
+    Args:
+        circuits: Circuits to combine.
+        coupling_map: Qubits that may interfere.
+        return_index: Return how the circuits were combined.
+
+    Returns:
+        A list of host circuits, containing the original circuits. If return_index=True, returns
+        (circuits, partition) where circuits is the list of host circuits and partition is a list of list of
+        indices of circuits included in each host circuit.
+    """
     qubits = check_circuits_same_qubits(circuits)
     qubit_interference_graph = create_qubit_interference_graph(qubits, coupling_map)
     circuit_interference_graph = create_circuit_interference_graph(
@@ -76,6 +94,18 @@ def parallelize_circuits(
 
 
 def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
+    """Combine circuits with the same qubits, but without overlapping active qubits, into one host circuit.
+
+    The new host circuit will have a 'subcircuits' metadata field containing information about the subcircuits
+    that uncombine_result() will use to "demultiplex" a single experiment result for a host circuit.
+    Subcircuit calibrations and classical registers will be merged into the host circuit.
+
+    Args:
+        circuits: Circuits to combine.
+
+    Returns:
+        The combined circuit.
+    """
     if len(circuits) == 0:
         raise ValueError("Got empty circuits.")
 
@@ -86,7 +116,7 @@ def combine_circuits(circuits: Sequence[QuantumCircuit]) -> QuantumCircuit:
     host_circ.metadata = {'subcircuits': []}
 
     creg_counter = -1
-    used_qubits: set[Qubit] = set()
+    used_qubits: Set[Qubit] = set()
     for circ in circuits:
         active_qubits = get_active_qubits(circ)
 
@@ -138,6 +168,7 @@ def create_qubit_interference_graph(
         qubits: Sequence[Qubit],
         coupling_map: Sequence[Sequence[int]] = (),
 ) -> retworkx.PyGraph:
+    """Return a graph where vertices are qubits and edges exist if the qubits are coupled."""
     graph = retworkx.PyGraph(multigraph=False)
     graph.add_nodes_from(qubits)
     for i, j in coupling_map:
@@ -149,6 +180,8 @@ def create_circuit_interference_graph(
         circuits: Sequence[QuantumCircuit],
         qubit_graph: retworkx.PyGraph,
 ) -> retworkx.PyGraph:
+    """Return a graph where vertices are circuits and edges exist if the circuits have active qubits that
+    couple."""
     graph = retworkx.PyGraph(multigraph=False)
     graph.add_nodes_from(circuits)
 
@@ -175,19 +208,21 @@ def create_circuit_interference_graph(
 
 
 def get_active_qubits(circuit: QuantumCircuit) -> set:
+    """Return the set of qubits that have at least one instruction performed on them by circuit."""
     return set().union(*[qubits for gate, qubits, clbits in circuit.data])
 
 
-def circuit_has_calibration(circ, name, qubits, params):
+def circuit_has_calibration(circuit, name, qubits, params):
+    """Return True if circuit has a calibration for name with qubits and params."""
     try:
-        gate_dict = circ.calibrations[name]
+        gate_dict = circuit.calibrations[name]
     except KeyError:
         return False
 
     return (tuple(qubits), tuple(params)) in gate_dict
 
 
-def uncombine_result(result: ExperimentResult) -> list[ExperimentResult]:
+def uncombine_result(result: ExperimentResult) -> List[ExperimentResult]:
     """Unpack an ExperimentResult for a circuit containing subcircuits by creating a list of ExperimentResults
     to store the results of each subcircuit as if they had been run individually and return this list."""
     if not has_subcircuits(result):
@@ -202,8 +237,8 @@ def uncombine_result(result: ExperimentResult) -> list[ExperimentResult]:
     new_results = []
 
     for sinfo in header.metadata.get('subcircuits', []):
-        new_expresult = copy.deepcopy(result.to_dict())
-        new_header = new_expresult['header']
+        new_exp_result = copy.deepcopy(result.to_dict())
+        new_header = new_exp_result['header']
 
         new_header['name'] = sinfo['name']
         new_header['metadata'] = sinfo['metadata']
@@ -230,31 +265,38 @@ def uncombine_result(result: ExperimentResult) -> list[ExperimentResult]:
 
         if result.meas_level == MeasLevel.CLASSIFIED:
             new_counts = marginal_counts(data.counts, [subcircuit_bit_indices])[0]
-            new_expresult['data'] = {'counts': {hex(s): n for s, n in new_counts.items()}}
+            new_exp_result['data'] = {'counts': {hex(s): n for s, n in new_counts.items()}}
         elif result.meas_level == MeasLevel.KERNELED:
             new_memory = np.take(data.memory, subcircuit_bit_indices, axis=-2)
-            new_expresult['data'] = {'memory': new_memory}
+            new_exp_result['data'] = {'memory': new_memory}
         else:
             raise ValueError(f"Unsupported meas_level: {MeasLevel(result.meas_level)!s}")
 
-        new_results.append(ExperimentResult.from_dict(new_expresult))
+        new_results.append(ExperimentResult.from_dict(new_exp_result))
 
     return new_results
 
 
-def has_subcircuits(expresult: ExperimentResult) -> bool:
-    metadata = getattr(expresult.header, 'metadata', {})
+def has_subcircuits(exp_result: ExperimentResult) -> bool:
+    """Return True if experiment result has a 'subcircuits' metadata field."""
+    metadata = getattr(exp_result.header, 'metadata', {})
     if isinstance(metadata.get('subcircuits', None), Iterable):
         return True
     else:
         return False
 
 
-def bake_schedule(sched, min_duration: Optional[int] = None):
-    assert len(sched.channels) == 1
-    assert isinstance(chan := sched.channels[0], qpulse.DriveChannel)
-    baked = _bake_schedule(sched)
-    with qpulse.build(default_alignment='sequential') as sched:
+def bake_schedule(schedule, min_duration: Optional[int] = None):
+    """Bake a schedule with multiple pulses into a schedule with a single Waveform with pre/post phase shifts.
+
+    This is mainly used to circumvent minimum pulse length constraints. Frequency shifts are not supported.
+    Multiple channels are not supported, schedule must utilise only one drive channel.
+    """
+    assert len(schedule.channels) == 1
+    chan = schedule.channels[0]
+    assert isinstance(chan, qpulse.DriveChannel)
+    baked = _bake_schedule(schedule)
+    with qpulse.build(default_alignment='sequential') as schedule:
         if baked.pre_phase: qpulse.shift_phase(baked.pre_phase, chan)
         if baked.samples.size > 0:
             samples = baked.samples
@@ -262,7 +304,7 @@ def bake_schedule(sched, min_duration: Optional[int] = None):
                 samples = np.pad(samples, (0, min_duration-samples.size), constant_values=0.0)
             qpulse.play(qpulse.Waveform(samples), chan)
         if baked.post_phase: qpulse.shift_phase(baked.post_phase, chan)
-    return sched
+    return schedule
 
 
 class BakedSchedule(NamedTuple):
