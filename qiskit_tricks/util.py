@@ -1,6 +1,17 @@
 from collections import Counter, defaultdict
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from typing import Optional, SupportsInt, Type, TypeVar, Union, cast, overload
+from typing import (
+    Dict,
+    List,
+    Optional,
+    SupportsInt,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+    overload,
+)
 
 from qiskit.circuit import ClassicalRegister
 from qiskit.pulse import Call, ParametricPulse, Play, Schedule, ScheduleBlock
@@ -12,9 +23,51 @@ T = TypeVar('T')
 def marginal_counts(
         counts: Mapping[Union[int, str], int],
         subsystem: Iterable[Collection[int]],
-) -> list[dict[int, int]]:
-    subsystem_counts: list[dict[int, int]] = []
-    subsystem_from_bit_index: dict[int, list[int]] = defaultdict(list)
+) -> List[Dict[int, int]]:
+    """Maginalize counts.
+
+    Counts is a dictionary like so::
+
+        counts = {'0000': 10,
+                  '0001':  7,
+                  '0010':  3,
+                  '0100':  5,
+                  '1000':  2}
+
+    The keys can be integers, or binary/hexadecminal string representations.
+
+    Subsystem is a list of a collection of indices belonging to a subsystem, e.g.::
+
+        subsystem = [{2, 3}, {0}]
+
+    The marginalized counts are then::
+
+        marginal_counts(counts, subsystem) \
+            == [{0: 20,
+                 1:  5,
+                 2:  2},
+                {0: 20,
+                 1:  7}]
+
+    Note that subsystem indices orders do not matter, i.e.::
+
+        subsystem = [[2, 3], [0]]
+
+    and::
+
+        subsystem = [[3, 2], [0]]
+
+    will produce the same return value. The bits of a state are not re-ordered when marginalizing.
+
+    Args:
+        counts: A dictionary mapping ints or strs to an integer count.
+        subsystems: A list of a collection of subsystem indices.
+
+    Returns:
+        A list of dictionary counts corresponding to each subsystem.
+    """
+    subsystem_counts: List[Dict[int, int]] = []
+    subsystem_from_bit_index: Dict[int, List[int]] = defaultdict(list)
 
     for i, bit_indices in enumerate(subsystem):
         subsystem_counts.append(defaultdict(int))
@@ -37,6 +90,21 @@ def marginal_counts(
 
 
 def ensure_int_state(state: Union[int, str, SupportsInt]) -> int:
+    """Convert state to a Python int.
+
+    If state is already a Python int, return it as is.
+
+    If state is a str, first remove all spaces. If the string starts with '0x', interpret it as hexadecimal.
+    If there is no prefix, interpret it as binary.
+
+    If state is any other type (e.g. NumPy type), it is converted to an integer via int(state).
+
+    Args:
+        state: An object representing a bitstring.
+
+    Returns:
+        A Python int.
+    """
     if isinstance(state, int):
         return state
     elif isinstance(state, str):
@@ -60,8 +128,8 @@ def bit_extract(source: T, indices: Sequence[int]) -> T:
 def bit_extract(source, indices):
     """Return an integer formed by extracting the bits of `source` at `indices`.
 
-    The 0-th bit of `source` is the least significant bit (LSB), and `indices[0]` will be the LSB of the
-    returned integer.
+    The 0-th bit of `source` is the least significant bit (LSB), and bit extracted at `indices[0]` will be
+    stored in the LSB of the returned integer.
     """
     dest = 0*source  # easiest way to accomodate any 'source' type
     for i in reversed(indices):
@@ -70,7 +138,7 @@ def bit_extract(source, indices):
     return dest
 
 
-def get_creg_indices(clbit_labels: Sequence[tuple[str, int]]) -> dict[str, list[int]]:
+def get_creg_indices(clbit_labels: Sequence[Tuple[str, int]]) -> Dict[str, List[int]]:
     """Return a dictionary mapping register names to a list of indices of their corresponding bits in
     `clbit_labels`."""
     # This works for 'qubit_labels' as well, but we only need this function for cregs.
@@ -81,9 +149,9 @@ def get_creg_indices(clbit_labels: Sequence[tuple[str, int]]) -> dict[str, list[
     return creg_indices
 
 
-def get_play_instruction(sched: Union[Schedule, ScheduleBlock]) -> Optional[Play]:
-    """Return the first Play instruction in `sched`."""
-    for t, inst in sched.instructions:
+def get_play_instruction(schedule: Union[Schedule, ScheduleBlock]) -> Optional[Play]:
+    """Return the first Play instruction in schedule."""
+    for t, inst in schedule.instructions:
         if isinstance(inst, Play):
             return inst
         elif isinstance(inst, Call):
@@ -96,7 +164,14 @@ def get_play_instruction(sched: Union[Schedule, ScheduleBlock]) -> Optional[Play
 
 
 def install_parametric_pulse(name: str, pulse: Type[ParametricPulse]) -> None:
-    """Monkey patch install a new parametric pulse."""
+    """Monkey patch install a new parametric pulse.
+
+    This is very hacky. It modifies the internal workings of the qiskit qobj assembler.
+
+    Args:
+        name: Name of pulse to register with the qiskit assembler.
+        pulse: The parametric pulse class to add.
+    """
     # XXX: This is very hacky.
     from enum import Enum
     import importlib
